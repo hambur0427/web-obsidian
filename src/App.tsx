@@ -1323,7 +1323,7 @@ function renderFolderNode(
       <button
         type="button"
         className="folder-row"
-        style={{ '--tree-level': options.level } as CSSProperties}
+        style={getTreeRowStyle(options.level)}
         onClick={() => options.onToggleFolder(folder.path)}
         onContextMenu={(event) => options.onContextMenu(event, folder.path)}
         draggable
@@ -1405,7 +1405,7 @@ function renderNoteNode(
     <div
       className={note.id === options.activeId ? 'note-row-wrap active' : 'note-row-wrap'}
       key={note.id}
-      style={{ '--tree-level': options.level } as CSSProperties}
+      style={getTreeRowStyle(options.level)}
       onContextMenu={(event) => options.onContextMenu(event, parentPath, note.id)}
       draggable
       onDragStart={(event) => {
@@ -1455,6 +1455,15 @@ function renderNoteNode(
       </button>
     </div>
   )
+}
+
+function getTreeRowStyle(level: number) {
+  return {
+    '--tree-level': level,
+    '--tree-padding-left': `${10 + level * 16}px`,
+    '--tree-line-left': `${17 + Math.max(level - 1, 0) * 16}px`,
+    '--tree-line-opacity': level > 0 ? 1 : 0,
+  } as CSSProperties
 }
 
 export default App

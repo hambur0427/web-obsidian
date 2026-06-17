@@ -202,17 +202,6 @@ button {
   gap: 4px;
 }
 
-.tree-children::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(17px + var(--tree-level, 0) * 16px);
-  width: 1px;
-  background: var(--tree-line);
-  z-index: 0;
-}
-
 .folder-row,
 .note-row-wrap {
   position: relative;
@@ -222,6 +211,19 @@ button {
   border-radius: 7px;
 }
 
+.folder-row::before,
+.note-row-wrap::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: var(--tree-line-left, 17px);
+  width: 1px;
+  background: var(--tree-line);
+  opacity: var(--tree-line-opacity, 0);
+  pointer-events: none;
+}
+
 .folder-row {
   display: grid;
   grid-template-columns: 16px 18px minmax(0, 1fr);
@@ -229,7 +231,7 @@ button {
   align-items: center;
   text-align: left;
   padding: 8px 10px;
-  padding-left: calc(10px + var(--tree-level, 0) * 16px);
+  padding-left: var(--tree-padding-left, 10px);
   color: var(--text-h);
   font-size: 13px;
 }
@@ -265,7 +267,7 @@ button {
   border: 0;
   background: transparent;
   padding: 10px;
-  padding-left: calc(10px + var(--tree-level, 0) * 16px);
+  padding-left: var(--tree-padding-left, 10px);
 }
 
 .note-row.editing {
