@@ -787,6 +787,20 @@ button {
   padding: 8px 10px;
 }
 
+.live-code-editor {
+  border-color: var(--border);
+  background: var(--code-bg);
+}
+
+.live-code-editor .cm-editor,
+.live-code-editor .cm-gutters {
+  background: var(--code-bg);
+}
+
+.live-code-editor .cm-activeLine {
+  background: color-mix(in srgb, var(--accent) 10%, var(--code-bg));
+}
+
 .live-heading-input {
   width: 100%;
   display: block;

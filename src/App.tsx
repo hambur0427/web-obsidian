@@ -1986,17 +1986,16 @@ function renderLiveMarkdownBlock(options: {
     options.editingBlock?.noteId === options.activeNoteId &&
     options.editingBlock.index === options.index
   const heading = parseMarkdownHeading(options.block.content)
+  const isCodeFence = isFencedCodeBlock(options.block.content)
 
   if (isEditing && heading) {
     return (
       <input
         key={options.block.id}
         className={`live-heading-input live-heading-${heading.level}`}
-        value={heading.text}
+        value={options.block.content}
         autoFocus
-        onChange={(event) =>
-          options.onUpdate(options.block, `${'#'.repeat(heading.level)} ${event.target.value}`)
-        }
+        onChange={(event) => options.onUpdate(options.block, event.target.value)}
         onBlur={options.onExitEdit}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
@@ -2016,7 +2015,7 @@ function renderLiveMarkdownBlock(options: {
     return (
       <CodeMirror
         key={options.block.id}
-        className="markdown-editor live-block-editor"
+        className={`markdown-editor live-block-editor${isCodeFence ? ' live-code-editor' : ''}`}
         value={options.block.content}
         extensions={markdownEditorExtensions}
         basicSetup={{
@@ -2063,6 +2062,10 @@ function parseMarkdownHeading(content: string) {
     level: match[1].length,
     text: match[2],
   }
+}
+
+function isFencedCodeBlock(content: string) {
+  return content.trimStart().startsWith('```')
 }
 
 function getTreeRowStyle(level: number) {
