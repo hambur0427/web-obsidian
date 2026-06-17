@@ -803,6 +803,80 @@ button {
   cursor: pointer;
 }
 
+/* Block widgets rendered by livePreview.ts */
+
+.cm-preview-codeblock {
+  display: block;
+  margin: 2px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--code-bg);
+  overflow: hidden;
+  cursor: text;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cm-preview-codelang {
+  display: block;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.cm-preview-codeblock pre {
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-h);
+}
+
+.cm-preview-codeblock code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.cm-preview-table {
+  display: block;
+  margin: 2px 0 14px;
+  overflow-x: auto;
+  cursor: text;
+}
+
+.cm-preview-table table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.cm-preview-table th,
+.cm-preview-table td {
+  border: 1px solid var(--border);
+  padding: 7px 14px;
+  text-align: left;
+  font-size: 14px;
+  vertical-align: top;
+}
+
+.cm-preview-table th {
+  background: var(--control-hover);
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* Make widget spans display as blocks so code/table widgets expand full width */
+.cm-content span:has(> .cm-preview-codeblock),
+.cm-content span:has(> .cm-preview-table) {
+  display: block;
+}
+
 .relations-footer {
   padding: 20px 32px 28px;
   border-top: 1px solid var(--border);
