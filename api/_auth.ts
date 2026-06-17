@@ -3,6 +3,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const COOKIE_NAME = 'web_obsidian_session'
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+const MAX_LOGIN_FAILURES = 5
+const LOGIN_LOCK_MS = 10 * 60 * 1000
+
+type LoginAttemptState = {
+  failures: number
+  lockedUntil: number
+}
+
+const loginAttempts = new Map<string, LoginAttemptState>()
 
 export function isAuthConfigured() {
   return Boolean(process.env.APP_PASSWORD)
@@ -37,6 +46,52 @@ export function verifyPassword(password: string) {
   return secureEqual(password, appPassword)
 }
 
+export function getClientIp(request: VercelRequest) {
+  const forwardedFor = getHeader(request, 'x-forwarded-for')
+  const realIp = getHeader(request, 'x-real-ip')
+
+  return forwardedFor.split(',')[0]?.trim() || realIp || request.socket.remoteAddress || 'unknown'
+}
+
+export function getLoginLockout(ip: string) {
+  const state = loginAttempts.get(ip)
+  if (!state) return 0
+
+  if (state.lockedUntil <= Date.now()) {
+    if (state.lockedUntil) loginAttempts.delete(ip)
+    return 0
+  }
+
+  return state.lockedUntil
+}
+
+export function recordFailedLogin(ip: string) {
+  const now = Date.now()
+  const state = loginAttempts.get(ip)
+
+  if (!state || state.lockedUntil <= now) {
+    loginAttempts.set(ip, {
+      failures: 1,
+      lockedUntil: 0,
+    })
+    return 0
+  }
+
+  const failures = state.failures + 1
+  const lockedUntil = failures >= MAX_LOGIN_FAILURES ? now + LOGIN_LOCK_MS : 0
+
+  loginAttempts.set(ip, {
+    failures,
+    lockedUntil,
+  })
+
+  return lockedUntil
+}
+
+export function clearFailedLogins(ip: string) {
+  loginAttempts.delete(ip)
+}
+
 export function setAuthCookie(response: VercelResponse) {
   const issuedAt = String(Date.now())
   const token = `${issuedAt}.${signSession(issuedAt)}`
@@ -64,6 +119,12 @@ function getCookie(request: VercelRequest, name: string) {
   const cookie = cookies.find((item) => item.startsWith(`${name}=`))
 
   return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : ''
+}
+
+function getHeader(request: VercelRequest, name: string) {
+  const value = request.headers[name]
+  if (Array.isArray(value)) return value[0] || ''
+  return value || ''
 }
 
 function serializeCookie(name: string, value: string, maxAge: number) {

@@ -55,6 +55,7 @@ type AuthSessionResponse = {
   authRequired: boolean
   authenticated: boolean
   error?: string
+  retryAfterSeconds?: number
 }
 
 type NoteTreeNode = {
@@ -402,6 +403,10 @@ function App() {
       const data = (await response.json()) as AuthSessionResponse
 
       if (!response.ok || !data.authenticated) {
+        if (response.status === 429 && data.retryAfterSeconds) {
+          throw new Error(`Too many failed attempts. Try again in ${formatDuration(data.retryAfterSeconds)}.`)
+        }
+
         throw new Error(data.error || 'Login failed')
       }
 
@@ -1452,6 +1457,15 @@ function getTrashLabel(note: Note) {
   const remainingMs = Math.max(TRASH_RETENTION_MS - (Date.now() - deletedAt), 0)
   const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000))
   return `${remainingDays} day${remainingDays === 1 ? '' : 's'} left - ${note.path}`
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  if (minutes <= 0) return `${seconds}s`
+  if (seconds <= 0) return `${minutes}m`
+  return `${minutes}m ${seconds}s`
 }
 
 function clamp(value: number, min: number, max: number) {
