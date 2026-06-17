@@ -9,6 +9,7 @@
   --text-h: #151917;
   --muted: #747d76;
   --border: #dfe3dc;
+  --tree-line: #cfd6ce;
   --accent: #2f7d5f;
   --accent-soft: #e8f3ed;
   --danger: #b84747;
@@ -38,6 +39,7 @@
     --text-h: #f0f4f1;
     --muted: #89948d;
     --border: #2d3631;
+    --tree-line: #38423d;
     --accent: #69c49d;
     --accent-soft: #18352a;
     --danger: #ef8b85;

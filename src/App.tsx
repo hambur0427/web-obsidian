@@ -10,8 +10,10 @@ import {
   FileDown,
   FileText,
   Folder,
+  FolderPlus,
   FolderOpen,
   Link2,
+  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -33,6 +35,7 @@ type Note = {
 type VaultState = {
   name: string
   notes: Note[]
+  folders?: string[]
   importedAt: string
 }
 
@@ -57,6 +60,7 @@ const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 const sampleVault: VaultState = {
   name: 'Demo Cloud Vault',
   importedAt: new Date().toISOString(),
+  folders: ['Projects'],
   notes: [
     {
       id: 'welcome.md',
@@ -141,7 +145,7 @@ function App() {
     )
   }, [activeNotes, query])
 
-  const noteTree = useMemo(() => buildNoteTree(filteredNotes), [filteredNotes])
+  const noteTree = useMemo(() => buildNoteTree(filteredNotes, vault.folders), [filteredNotes, vault.folders])
 
   const visibleExpandedFolders = useMemo(() => {
     if (!query.trim()) return expandedFolders
@@ -199,7 +203,7 @@ function App() {
       const nextActiveNotes = getActiveNotes(nextVault.notes)
       setVault(nextVault)
       setActiveId(nextActiveNotes[0]?.id ?? '')
-      setExpandedFolders(collectFolderPaths(buildNoteTree(nextActiveNotes)))
+      setExpandedFolders(collectFolderPaths(buildNoteTree(nextActiveNotes, nextVault.folders)))
       setCloudStatus('Loaded from Vercel Blob')
     } catch (error) {
       setCloudStatus(error instanceof Error ? error.message : 'Load failed')
@@ -263,13 +267,14 @@ function App() {
 
     const importedVault = {
       name: vaultName || 'Imported Vault',
+      folders: collectFoldersFromNotes(notes),
       notes: notes.sort((a, b) => a.path.localeCompare(b.path)),
       importedAt: new Date().toISOString(),
     }
 
     setVault(importedVault)
     setActiveId(importedVault.notes[0]?.id ?? '')
-    setExpandedFolders(collectFolderPaths(buildNoteTree(importedVault.notes)))
+    setExpandedFolders(collectFolderPaths(buildNoteTree(importedVault.notes, importedVault.folders)))
     setCloudStatus('Imported locally. Save cloud to persist.')
     event.target.value = ''
   }
@@ -292,6 +297,67 @@ function App() {
     }))
     setActiveId(note.id)
     setCloudStatus('Unsaved local changes')
+  }
+
+  function createFolder() {
+    const rawPath = window.prompt('Folder path', 'New Folder')
+    const path = normalizeFolderPath(rawPath ?? '')
+
+    if (!path) return
+
+    if ((vault.folders ?? []).some((folder) => folder.toLowerCase() === path.toLowerCase())) {
+      setCloudStatus('Folder already exists')
+      return
+    }
+
+    setVault((current) => ({
+      ...current,
+      folders: sortFolderPaths([...(current.folders ?? []), path]),
+      importedAt: new Date().toISOString(),
+    }))
+    expandFolderPath(path)
+    setCloudStatus('Folder created locally. Save cloud to persist.')
+  }
+
+  function renameNote(noteId: string) {
+    const note = vault.notes.find((item) => item.id === noteId)
+    if (!note) return
+
+    const currentName = note.path.split('/').pop()?.replace(/\.md$/i, '') || note.title
+    const nextName = normalizeMarkdownFileName(window.prompt('Rename Markdown file', currentName) ?? '')
+
+    if (!nextName) return
+
+    const folderPath = getParentFolder(note.path)
+    const nextPath = folderPath ? `${folderPath}/${nextName}.md` : `${nextName}.md`
+    const nextId = nextPath.toLowerCase()
+
+    if (
+      vault.notes.some(
+        (item) => item.id !== noteId && item.path.toLowerCase() === nextPath.toLowerCase(),
+      )
+    ) {
+      setCloudStatus('A note with that path already exists')
+      return
+    }
+
+    setVault((current) => ({
+      ...current,
+      notes: current.notes.map((item) =>
+        item.id === noteId
+          ? {
+              ...item,
+              id: nextId,
+              title: nextName,
+              path: nextPath,
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      ),
+    }))
+
+    if (activeId === noteId) setActiveId(nextId)
+    setCloudStatus('Renamed locally. Save cloud to persist.')
   }
 
   function moveNoteToTrash(noteId: string) {
@@ -349,6 +415,19 @@ function App() {
       } else {
         next.add(path)
       }
+      return next
+    })
+  }
+
+  function expandFolderPath(path: string) {
+    setExpandedFolders((current) => {
+      const next = new Set(current)
+      const parts = path.split('/').filter(Boolean)
+
+      parts.forEach((_, index) => {
+        next.add(parts.slice(0, index + 1).join('/'))
+      })
+
       return next
     })
   }
@@ -451,6 +530,10 @@ function App() {
             <Plus size={18} aria-hidden="true" />
             New
           </button>
+          <button type="button" onClick={createFolder} title="Create folder">
+            <FolderPlus size={18} aria-hidden="true" />
+            Folder
+          </button>
           <button type="button" onClick={downloadJson} title="Export JSON">
             <FileDown size={18} aria-hidden="true" />
             Export
@@ -503,6 +586,7 @@ function App() {
               onSelectNote: setActiveId,
               onToggleFolder: toggleFolder,
               onTrashNote: moveNoteToTrash,
+              onRenameNote: renameNote,
             }),
           )}
           {noteTree.notes.map((note) =>
@@ -511,6 +595,7 @@ function App() {
               level: 0,
               onSelectNote: setActiveId,
               onTrashNote: moveNoteToTrash,
+              onRenameNote: renameNote,
             }),
           )}
         </nav>
@@ -649,6 +734,33 @@ function stripVaultRoot(path: string, vaultName: string) {
   return path.startsWith(`${vaultName}/`) ? path.slice(vaultName.length + 1) : path
 }
 
+function getParentFolder(path: string) {
+  const segments = path.split('/').filter(Boolean)
+  segments.pop()
+  return segments.join('/')
+}
+
+function normalizeFolderPath(path: string) {
+  return path
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('/')
+}
+
+function normalizeMarkdownFileName(name: string) {
+  return name
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop()
+    ?.replace(/\.md$/i, '')
+    .trim()
+    .replace(/[<>:"|?*]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 120) ?? ''
+}
+
 function extractWikiLinks(content: string) {
   return Array.from(content.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g))
     .map((match) => match[1].trim())
@@ -693,7 +805,28 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function buildNoteTree(notes: Note[]): NoteTreeNode {
+function collectFoldersFromNotes(notes: Note[]) {
+  const folders = new Set<string>()
+
+  notes.forEach((note) => {
+    const parent = getParentFolder(note.path)
+    const parts = parent.split('/').filter(Boolean)
+
+    parts.forEach((_, index) => {
+      folders.add(parts.slice(0, index + 1).join('/'))
+    })
+  })
+
+  return sortFolderPaths(Array.from(folders))
+}
+
+function sortFolderPaths(paths: string[]) {
+  return Array.from(new Set(paths.map(normalizeFolderPath).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b),
+  )
+}
+
+function buildNoteTree(notes: Note[], folders: string[] = []): NoteTreeNode {
   const root: NoteTreeNode = {
     name: '',
     path: '',
@@ -701,35 +834,46 @@ function buildNoteTree(notes: Note[]): NoteTreeNode {
     notes: [],
   }
 
+  folders.forEach((folder) => {
+    addFolderToTree(root, folder)
+  })
+
   notes.forEach((note) => {
     const segments = note.path.split('/').filter(Boolean)
     const fileName = segments.pop()
 
     if (!fileName) return
 
-    let current = root
-    segments.forEach((segment) => {
-      const folderPath = current.path ? `${current.path}/${segment}` : segment
-      let folder = current.folders.find((item) => item.path === folderPath)
-
-      if (!folder) {
-        folder = {
-          name: segment,
-          path: folderPath,
-          folders: [],
-          notes: [],
-        }
-        current.folders.push(folder)
-      }
-
-      current = folder
-    })
-
+    const current = addFolderToTree(root, segments.join('/'))
     current.notes.push(note)
   })
 
   sortTree(root)
   return root
+}
+
+function addFolderToTree(root: NoteTreeNode, path: string) {
+  const segments = normalizeFolderPath(path).split('/').filter(Boolean)
+  let current = root
+
+  segments.forEach((segment) => {
+    const folderPath = current.path ? `${current.path}/${segment}` : segment
+    let folder = current.folders.find((item) => item.path.toLowerCase() === folderPath.toLowerCase())
+
+    if (!folder) {
+      folder = {
+        name: segment,
+        path: folderPath,
+        folders: [],
+        notes: [],
+      }
+      current.folders.push(folder)
+    }
+
+    current = folder
+  })
+
+  return current
 }
 
 function sortTree(node: NoteTreeNode) {
@@ -761,6 +905,7 @@ function renderFolderNode(
     onSelectNote: (id: string) => void
     onToggleFolder: (path: string) => void
     onTrashNote: (id: string) => void
+    onRenameNote: (id: string) => void
   },
 ) {
   const isExpanded = options.expandedFolders.has(folder.path)
@@ -788,7 +933,7 @@ function renderFolderNode(
       </button>
 
       {isExpanded ? (
-        <div className="tree-children">
+        <div className="tree-children" style={{ '--tree-level': options.level } as CSSProperties}>
           {folder.folders.map((child) =>
             renderFolderNode(child, {
               ...options,
@@ -801,6 +946,7 @@ function renderFolderNode(
               level: options.level + 1,
               onSelectNote: options.onSelectNote,
               onTrashNote: options.onTrashNote,
+              onRenameNote: options.onRenameNote,
             }),
           )}
         </div>
@@ -816,6 +962,7 @@ function renderNoteNode(
     level: number
     onSelectNote: (id: string) => void
     onTrashNote: (id: string) => void
+    onRenameNote: (id: string) => void
   },
 ) {
   return (
@@ -833,7 +980,15 @@ function renderNoteNode(
       </button>
       <button
         type="button"
-        className="note-trash-button"
+        className="note-action-button"
+        onClick={() => options.onRenameNote(note.id)}
+        title="Rename Markdown file"
+      >
+        <Pencil size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="note-action-button danger"
         onClick={() => options.onTrashNote(note.id)}
         title="Move to trash"
       >

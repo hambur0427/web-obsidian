@@ -64,7 +64,7 @@ button {
 .toolbar button,
 .folder-row,
 .note-row,
-.note-trash-button,
+.note-action-button,
 .trash-row button,
 .relation-group button {
   border: 1px solid var(--border);
@@ -91,7 +91,7 @@ button {
 .folder-row:hover,
 .note-row:hover,
 .note-row-wrap:hover,
-.note-trash-button:hover,
+.note-action-button:hover,
 .trash-row button:hover,
 .relation-group button:hover {
   border-color: var(--accent);
@@ -166,15 +166,27 @@ button {
 }
 
 .tree-node {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .tree-children {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.tree-children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(17px + var(--tree-level, 0) * 16px);
+  width: 1px;
+  background: var(--tree-line);
 }
 
 .folder-row,
@@ -198,7 +210,7 @@ button {
 
 .note-row-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 30px 30px;
   align-items: stretch;
   border: 1px solid var(--border);
   background: var(--control);
@@ -225,8 +237,8 @@ button {
   background: var(--accent-soft);
 }
 
-.note-trash-button {
-  width: 30px;
+.note-action-button {
+  width: 29px;
   min-height: 100%;
   display: grid;
   place-items: center;
@@ -239,12 +251,16 @@ button {
   opacity: 0;
 }
 
-.note-row-wrap:hover .note-trash-button,
-.note-row-wrap:focus-within .note-trash-button {
+.note-row-wrap:hover .note-action-button,
+.note-row-wrap:focus-within .note-action-button {
   opacity: 1;
 }
 
-.note-trash-button:hover {
+.note-action-button:hover {
+  color: var(--accent);
+}
+
+.note-action-button.danger:hover {
   color: var(--danger);
   border-left-color: color-mix(in srgb, var(--danger) 35%, var(--border));
 }

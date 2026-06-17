@@ -9,6 +9,9 @@ Cloud-ready Obsidian-style vault prototype built with Vite, React, TypeScript, a
 - Preserve imported folder paths.
 - Ignore `.obsidian` configuration folders.
 - Display imported notes as an expandable folder tree.
+- Create empty folders and keep them in the vault.
+- Rename Markdown files without leaving the current folder.
+- Show Obsidian-style hierarchy guide lines in the folder tree.
 - Edit Markdown with live preview.
 - Resize the Markdown preview pane.
 - Resolve `[[wiki links]]`.
