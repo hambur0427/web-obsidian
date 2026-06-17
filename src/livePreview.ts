@@ -66,56 +66,131 @@ class CopyButtonWidget extends WidgetType {
   ignoreEvent() { return true }
 }
 
-// ── Table widget ──────────────────────────────────────────────────────────────
+// ── Table widget (interactive editor) ─────────────────────────────────────────
+
+function escapeCell(value: string) {
+  return value.replace(/\|/g, '\\|').trim()
+}
+
+function serializeTable(headers: string[], rows: string[][]): string {
+  const head = `| ${headers.map(escapeCell).join(' | ')} |`
+  const sep  = `| ${headers.map(() => '---').join(' | ')} |`
+  const body = rows.map(
+    (r) => `| ${headers.map((_, c) => escapeCell(r[c] ?? '')).join(' | ')} |`,
+  )
+  return [head, sep, ...body].join('\n')
+}
 
 class TableWidget extends WidgetType {
   private headers: string[]
   private rows: string[][]
-  constructor(headers: string[], rows: string[][]) { super(); this.headers = headers; this.rows = rows }
+  private from: number
+  private to: number
+  constructor(headers: string[], rows: string[][], from: number, to: number) {
+    super()
+    this.headers = headers
+    this.rows = rows
+    this.from = from
+    this.to = to
+  }
 
   eq(other: TableWidget) {
     return (
+      other.from === this.from &&
+      other.to === this.to &&
       JSON.stringify(other.headers) === JSON.stringify(this.headers) &&
       JSON.stringify(other.rows)    === JSON.stringify(this.rows)
     )
   }
 
-  toDOM() {
-    const wrap  = document.createElement('div')
-    wrap.className = 'cm-preview-table'
+  toDOM(view: EditorView) {
+    // Local working copy; the document is only rewritten on commit.
+    const headers = [...this.headers]
+    const rows    = this.rows.map((r) => [...r])
+    const from = this.from
+    const to   = this.to
+
+    const commit = () => {
+      view.dispatch({
+        changes: { from, to, insert: serializeTable(headers, rows) },
+      })
+    }
+
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-md-table'
+
     const table = document.createElement('table')
 
-    if (this.headers.length) {
-      const thead = document.createElement('thead')
-      const tr    = document.createElement('tr')
-      for (const h of this.headers) {
-        const th = document.createElement('th')
-        th.textContent = h
-        tr.appendChild(th)
-      }
-      thead.appendChild(tr)
-      table.appendChild(thead)
-    }
+    const thead = document.createElement('thead')
+    const htr   = document.createElement('tr')
+    headers.forEach((h, c) => {
+      const th = document.createElement('th')
+      const input = document.createElement('input')
+      input.value = h
+      input.addEventListener('mousedown', (e) => e.stopPropagation())
+      input.addEventListener('change', () => { headers[c] = input.value; commit() })
+      th.appendChild(input)
+      htr.appendChild(th)
+    })
+    thead.appendChild(htr)
+    table.appendChild(thead)
 
-    if (this.rows.length) {
-      const tbody = document.createElement('tbody')
-      for (const row of this.rows) {
-        const tr = document.createElement('tr')
-        for (let c = 0; c < this.headers.length; c++) {
-          const td = document.createElement('td')
-          td.textContent = row[c] ?? ''
-          tr.appendChild(td)
-        }
-        tbody.appendChild(tr)
-      }
-      table.appendChild(tbody)
-    }
-
+    const tbody = document.createElement('tbody')
+    rows.forEach((row, r) => {
+      const tr = document.createElement('tr')
+      headers.forEach((_, c) => {
+        const td = document.createElement('td')
+        const input = document.createElement('input')
+        input.value = row[c] ?? ''
+        input.addEventListener('mousedown', (e) => e.stopPropagation())
+        input.addEventListener('change', () => { rows[r][c] = input.value; commit() })
+        td.appendChild(input)
+        tr.appendChild(td)
+      })
+      tbody.appendChild(tr)
+    })
+    table.appendChild(tbody)
     wrap.appendChild(table)
+
+    // Toolbar
+    const bar = document.createElement('div')
+    bar.className = 'cm-md-table-toolbar'
+
+    const mkBtn = (label: string, onClick: () => void) => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.textContent = label
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation() })
+      b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onClick() })
+      return b
+    }
+
+    bar.appendChild(mkBtn('+ Column', () => {
+      headers.push('Column')
+      rows.forEach((r) => r.push(''))
+      commit()
+    }))
+    bar.appendChild(mkBtn('− Column', () => {
+      if (headers.length <= 1) return
+      headers.pop()
+      rows.forEach((r) => r.pop())
+      commit()
+    }))
+    bar.appendChild(mkBtn('+ Row', () => {
+      rows.push(headers.map(() => ''))
+      commit()
+    }))
+    bar.appendChild(mkBtn('− Row', () => {
+      if (!rows.length) return
+      rows.pop()
+      commit()
+    }))
+
+    wrap.appendChild(bar)
     return wrap
   }
 
-  ignoreEvent() { return false }
+  ignoreEvent() { return true }
 }
 
 // ── Block detection ───────────────────────────────────────────────────────────
@@ -275,7 +350,15 @@ function buildDecorations(state: EditorState): DecorationSet {
         else if (isClose) ranges.push(lnCodeLast.range(line.from))
         else ranges.push(lnCode.range(line.from))
 
-        if (isOpen || isClose) ranges.push(lnCodeFence.range(line.from))
+        if (isOpen || isClose) {
+          if (active) {
+            // While editing, reveal the raw ``` markers (dimmed)
+            ranges.push(lnCodeFence.range(line.from))
+          } else if (line.to > line.from) {
+            // When idle, hide the ``` text but keep the row as reserved space
+            ranges.push(mkHidden.range(line.from, line.to))
+          }
+        }
 
         if (isOpen && !active) {
           ranges.push(
@@ -287,17 +370,15 @@ function buildDecorations(state: EditorState): DecorationSet {
         }
       }
     } else {
-      // Table: rendered widget when inactive, raw pipes when active
-      if (!active) {
-        const from = doc.line(block.fromLine).from
-        const to   = doc.line(block.toLine).to
-        ranges.push(
-          Decoration.replace({
-            widget: new TableWidget(block.headers, block.rows),
-            block: true,
-          }).range(from, to),
-        )
-      }
+      // Table: always an interactive widget (no raw-syntax editing)
+      const from = doc.line(block.fromLine).from
+      const to   = doc.line(block.toLine).to
+      ranges.push(
+        Decoration.replace({
+          widget: new TableWidget(block.headers, block.rows, from, to),
+          block: true,
+        }).range(from, to),
+      )
     }
   }
 
@@ -340,22 +421,6 @@ const livePreviewField = StateField.define<DecorationSet>({
 export function createLivePreviewExtensions(onNavigate: (target: string) => void) {
   const clickHandler = EditorView.domEventHandlers({
     mousedown(event, view) {
-      const target = event.target as HTMLElement
-
-      // Click on a rendered table → move cursor to its top so the raw
-      // markdown is revealed for editing.
-      const tableEl = target.closest<HTMLElement>('.cm-preview-table')
-      if (tableEl) {
-        event.preventDefault()
-        const rect = tableEl.getBoundingClientRect()
-        const pos  = view.posAtCoords({ x: rect.left + 4, y: rect.top + 2 })
-        if (pos !== null) {
-          view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
-          view.focus()
-        }
-        return true
-      }
-
       // Ctrl/Cmd-click on a wiki link → navigate
       if (!event.ctrlKey && !event.metaKey) return false
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
