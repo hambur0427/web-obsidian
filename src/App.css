@@ -787,6 +787,39 @@ button {
   padding: 8px 10px;
 }
 
+.live-heading-input {
+  width: 100%;
+  display: block;
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--editor);
+  color: var(--text-h);
+  font-family: var(--sans);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.live-heading-1 {
+  font-size: 32px;
+}
+
+.live-heading-2 {
+  font-size: 22px;
+}
+
+.live-heading-3 {
+  font-size: 18px;
+}
+
+.live-heading-4,
+.live-heading-5,
+.live-heading-6 {
+  font-size: 16px;
+}
+
 .empty-state {
   display: grid;
   place-items: center;

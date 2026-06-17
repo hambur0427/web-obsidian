@@ -1315,41 +1315,17 @@ function App() {
             <div className="live-document" aria-label="Markdown editor">
               <section className="live-blocks">
                 {markdownBlocks.map((block, index) =>
-                  editingBlock?.noteId === activeNote.id && editingBlock.index === index ? (
-                    <CodeMirror
-                      key={block.id}
-                      className="markdown-editor live-block-editor"
-                      value={block.content}
-                      extensions={markdownEditorExtensions}
-                      basicSetup={{
-                        autocompletion: true,
-                        bracketMatching: true,
-                        closeBrackets: true,
-                        defaultKeymap: true,
-                        foldGutter: false,
-                        highlightActiveLine: true,
-                        highlightActiveLineGutter: false,
-                        highlightSelectionMatches: true,
-                        lineNumbers: false,
-                        searchKeymap: true,
-                      }}
-                      onChange={(value) => updateActiveNoteBlock(block, value)}
-                      onBlur={() => setEditingBlock(null)}
-                      autoFocus
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      key={block.id}
-                      className="live-markdown-block markdown-preview"
-                      onClick={(event) => {
-                        handlePreviewClick(event)
-                        const target = event.target as HTMLElement
-                        if (!target.closest('a')) setEditingBlock({ noteId: activeNote.id, index })
-                      }}
-                      dangerouslySetInnerHTML={{ __html: renderMarkdownBlock(block.content, notesByTitle) }}
-                    />
-                  ),
+                  renderLiveMarkdownBlock({
+                    activeNoteId: activeNote.id,
+                    block,
+                    editingBlock,
+                    index,
+                    notesByTitle,
+                    onEdit: () => setEditingBlock({ noteId: activeNote.id, index }),
+                    onExitEdit: () => setEditingBlock(null),
+                    onPreviewClick: handlePreviewClick,
+                    onUpdate: updateActiveNoteBlock,
+                  }),
                 )}
               </section>
 
@@ -1993,6 +1969,100 @@ function renderNoteNode(
       </button>
     </div>
   )
+}
+
+function renderLiveMarkdownBlock(options: {
+  activeNoteId: string
+  block: MarkdownBlock
+  editingBlock: EditingBlock | null
+  index: number
+  notesByTitle: Map<string, Note>
+  onEdit: () => void
+  onExitEdit: () => void
+  onPreviewClick: (event: ReactMouseEvent<HTMLElement>) => void
+  onUpdate: (block: MarkdownBlock, content: string) => void
+}) {
+  const isEditing =
+    options.editingBlock?.noteId === options.activeNoteId &&
+    options.editingBlock.index === options.index
+  const heading = parseMarkdownHeading(options.block.content)
+
+  if (isEditing && heading) {
+    return (
+      <input
+        key={options.block.id}
+        className={`live-heading-input live-heading-${heading.level}`}
+        value={heading.text}
+        autoFocus
+        onChange={(event) =>
+          options.onUpdate(options.block, `${'#'.repeat(heading.level)} ${event.target.value}`)
+        }
+        onBlur={options.onExitEdit}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            options.onExitEdit()
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            options.onExitEdit()
+          }
+        }}
+      />
+    )
+  }
+
+  if (isEditing) {
+    return (
+      <CodeMirror
+        key={options.block.id}
+        className="markdown-editor live-block-editor"
+        value={options.block.content}
+        extensions={markdownEditorExtensions}
+        basicSetup={{
+          autocompletion: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          defaultKeymap: true,
+          foldGutter: false,
+          highlightActiveLine: true,
+          highlightActiveLineGutter: false,
+          highlightSelectionMatches: true,
+          lineNumbers: false,
+          searchKeymap: true,
+        }}
+        onChange={(value) => options.onUpdate(options.block, value)}
+        onBlur={options.onExitEdit}
+        autoFocus
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      key={options.block.id}
+      className="live-markdown-block markdown-preview"
+      onClick={(event) => {
+        options.onPreviewClick(event)
+        const target = event.target as HTMLElement
+        if (!target.closest('a')) options.onEdit()
+      }}
+      dangerouslySetInnerHTML={{
+        __html: renderMarkdownBlock(options.block.content, options.notesByTitle),
+      }}
+    />
+  )
+}
+
+function parseMarkdownHeading(content: string) {
+  const match = /^(#{1,6})\s+(.+?)\s*$/.exec(content)
+  if (!match) return null
+
+  return {
+    level: match[1].length,
+    text: match[2],
+  }
 }
 
 function getTreeRowStyle(level: number) {
