@@ -19,6 +19,7 @@ import {
   Cloud,
   ChevronDown,
   ChevronRight,
+  Copy,
   FileDown,
   FilePlus,
   FileText,
@@ -2055,19 +2056,42 @@ function renderLiveMarkdownBlock(options: {
   }
 
   return (
-    <button
-      type="button"
+    <div
       key={options.block.id}
-      className="live-markdown-block markdown-preview"
+      className={`live-markdown-block markdown-preview${isCodeFence ? ' live-code-preview' : ''}`}
+      role="button"
+      tabIndex={0}
       onClick={(event) => {
         options.onPreviewClick(event)
         const target = event.target as HTMLElement
-        if (!target.closest('a')) options.onEdit()
+        if (!target.closest('a, button')) options.onEdit()
       }}
-      dangerouslySetInnerHTML={{
-        __html: renderMarkdownBlock(options.block.content, options.notesByTitle),
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        options.onEdit()
       }}
-    />
+    >
+      {isCodeFence ? (
+        <button
+          type="button"
+          className="code-copy-button"
+          title="Copy code"
+          onClick={(event) => {
+            event.stopPropagation()
+            void navigator.clipboard.writeText(getFencedCodeBody(options.block.content))
+          }}
+        >
+          <Copy size={14} aria-hidden="true" />
+          Copy
+        </button>
+      ) : null}
+      <div
+        dangerouslySetInnerHTML={{
+          __html: renderMarkdownBlock(options.block.content, options.notesByTitle),
+        }}
+      />
+    </div>
   )
 }
 
@@ -2193,6 +2217,20 @@ function parseMarkdownHeading(content: string) {
 
 function isFencedCodeBlock(content: string) {
   return content.trimStart().startsWith('```')
+}
+
+function getFencedCodeBody(content: string) {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  const openingFenceIndex = lines.findIndex((line) => line.trimStart().startsWith('```'))
+  if (openingFenceIndex === -1) return content
+
+  const closingFenceIndex = lines
+    .slice(openingFenceIndex + 1)
+    .findIndex((line) => line.trimStart().startsWith('```'))
+  const endIndex =
+    closingFenceIndex === -1 ? lines.length : openingFenceIndex + 1 + closingFenceIndex
+
+  return lines.slice(openingFenceIndex + 1, endIndex).join('\n')
 }
 
 function parseMarkdownTable(content: string): MarkdownTable | null {

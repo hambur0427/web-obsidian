@@ -755,20 +755,68 @@ button {
 }
 
 .live-markdown-block {
+  position: relative;
   display: block;
   width: 100%;
+  box-sizing: border-box;
   margin: 0 0 6px;
   padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: text;
 }
 
 .live-markdown-block:hover {
   border-color: var(--border);
-  background: var(--control-hover);
+}
+
+.live-markdown-block:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.live-markdown-block.markdown-preview h1,
+.live-markdown-block.markdown-preview h2,
+.live-markdown-block.markdown-preview h3,
+.live-markdown-block.markdown-preview h4,
+.live-markdown-block.markdown-preview h5,
+.live-markdown-block.markdown-preview h6 {
+  margin: 0;
+}
+
+.live-code-preview.markdown-preview pre {
+  margin: 0;
+  padding-right: 86px;
+}
+
+.code-copy-button {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.code-copy-button:hover,
+.code-copy-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-h);
+  outline: 0;
 }
 
 .live-block-editor {
@@ -803,6 +851,7 @@ button {
 
 .live-heading-input {
   width: 100%;
+  box-sizing: border-box;
   display: block;
   margin: 0 0 10px;
   padding: 6px 8px;
