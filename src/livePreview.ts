@@ -24,25 +24,19 @@ const hideLine     = Decoration.replace({})
 const COPY_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
 
-// ── Code header widget (language label + copy button) ─────────────────────────
+// ── Copy button widget (floats on the right of the opening fence line) ─────────
 
-class CodeHeaderWidget extends WidgetType {
-  private lang: string
+class CopyButtonWidget extends WidgetType {
   private code: string
-  constructor(lang: string, code: string) { super(); this.lang = lang; this.code = code }
+  constructor(code: string) { super(); this.code = code }
 
-  eq(other: CodeHeaderWidget) {
-    return other.lang === this.lang && other.code === this.code
+  eq(other: CopyButtonWidget) {
+    return other.code === this.code
   }
 
   toDOM() {
-    const bar = document.createElement('div')
-    bar.className = 'cm-code-header'
-
-    const label = document.createElement('span')
-    label.className = 'cm-code-lang'
-    label.textContent = this.lang || 'code'
-    bar.appendChild(label)
+    const wrap = document.createElement('span')
+    wrap.className = 'cm-code-topbar'
 
     const btn = document.createElement('button')
     btn.className = 'cm-code-copy'
@@ -69,9 +63,9 @@ class CodeHeaderWidget extends WidgetType {
         }
       })
     })
-    bar.appendChild(btn)
+    wrap.appendChild(btn)
 
-    return bar
+    return wrap
   }
 
   ignoreEvent() { return true }
@@ -286,7 +280,7 @@ function buildDecorations(state: EditorState): DecorationSet {
           ranges.push(lnCodeFirst.range(line.from))
           ranges.push(
             Decoration.replace({
-              widget: new CodeHeaderWidget(block.lang, block.code),
+              widget: new CopyButtonWidget(block.code),
             }).range(line.from, line.to),
           )
         } else if (!active && isClose) {
