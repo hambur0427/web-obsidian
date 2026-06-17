@@ -1027,7 +1027,6 @@ function App() {
           <Cloud size={28} aria-hidden="true" />
           <div>
             <strong>Cloud Vault</strong>
-            <span>{vault.name}</span>
           </div>
         </div>
 
