@@ -72,6 +72,18 @@ type NoteTreeNode = {
   notes: Note[]
 }
 
+type MarkdownBlock = {
+  id: string
+  content: string
+  startLine: number
+  endLine: number
+}
+
+type EditingBlock = {
+  noteId: string
+  index: number
+}
+
 type ContextMenuState = {
   x: number
   y: number
@@ -171,7 +183,6 @@ function App() {
   const [cloudStatus, setCloudStatus] = useState('Local mode')
   const [isSyncing, setIsSyncing] = useState(false)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(['Projects']))
-  const [previewWidth, setPreviewWidth] = useState(380)
   const [cloudReady, setCloudReady] = useState(false)
   const [cloudInitialized, setCloudInitialized] = useState(false)
   const [authChecking, setAuthChecking] = useState(true)
@@ -185,6 +196,7 @@ function App() {
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [editingBlock, setEditingBlock] = useState<EditingBlock | null>(null)
   const initialVaultSignatureRef = useRef(JSON.stringify(pruneExpiredTrash(vault)))
   const lastSavedCloudSignatureRef = useRef('')
 
@@ -398,18 +410,10 @@ function App() {
     )
   }, [activeNote, activeNotes])
 
-  const renderedMarkdown = useMemo(() => {
-    if (!activeNote) return ''
-    const linkedContent = activeNote.content.replace(
-      /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g,
-      (_, target: string, alias: string) => {
-        const note = notesByTitle.get(normalizeTitle(target))
-        const label = alias || target
-        return note ? `[${label}](#note:${note.id})` : `<span class="missing-link">${label}</span>`
-      },
-    )
-    return DOMPurify.sanitize(marked.parse(linkedContent) as string)
-  }, [activeNote, notesByTitle])
+  const markdownBlocks = useMemo(
+    () => splitMarkdownBlocks(activeNote?.content ?? ''),
+    [activeNote?.content],
+  )
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -935,6 +939,19 @@ function App() {
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Unsaved local changes')
   }
 
+  function updateActiveNoteBlock(block: MarkdownBlock, content: string) {
+    if (!activeNote) return
+
+    const lines = activeNote.content.split('\n')
+    const nextLines = [
+      ...lines.slice(0, block.startLine),
+      ...content.split('\n'),
+      ...lines.slice(block.endLine + 1),
+    ]
+
+    updateActiveNote(nextLines.join('\n'))
+  }
+
   function downloadJson() {
     const blob = new Blob([JSON.stringify(vault, null, 2)], {
       type: 'application/json',
@@ -945,26 +962,6 @@ function App() {
     anchor.download = `${vault.name.replace(/\s+/g, '-').toLowerCase()}-vault.json`
     anchor.click()
     URL.revokeObjectURL(url)
-  }
-
-  function startPreviewResize(event: ReactMouseEvent<HTMLDivElement>) {
-    event.preventDefault()
-
-    const startX = event.clientX
-    const startWidth = previewWidth
-
-    function handleMouseMove(moveEvent: MouseEvent) {
-      const nextWidth = startWidth - (moveEvent.clientX - startX)
-      setPreviewWidth(clamp(nextWidth, 300, 680))
-    }
-
-    function handleMouseUp() {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
   }
 
   function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
@@ -1014,14 +1011,7 @@ function App() {
   }
 
   return (
-    <main
-      className="app-shell"
-      style={
-        {
-          '--preview-width': `${previewWidth}px`,
-        } as CSSProperties
-      }
-    >
+    <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
           <Cloud size={28} aria-hidden="true" />
@@ -1322,87 +1312,91 @@ function App() {
               </div>
               <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
             </header>
-            <CodeMirror
-              className="markdown-editor"
-              value={activeNote.content}
-              extensions={markdownEditorExtensions}
-              basicSetup={{
-                autocompletion: true,
-                bracketMatching: true,
-                closeBrackets: true,
-                defaultKeymap: true,
-                foldGutter: false,
-                highlightActiveLine: true,
-                highlightActiveLineGutter: false,
-                highlightSelectionMatches: true,
-                lineNumbers: false,
-                searchKeymap: true,
-              }}
-              onChange={updateActiveNote}
-              aria-label="Markdown editor"
-            />
+            <div className="live-document" aria-label="Markdown editor">
+              <section className="live-blocks">
+                {markdownBlocks.map((block, index) =>
+                  editingBlock?.noteId === activeNote.id && editingBlock.index === index ? (
+                    <CodeMirror
+                      key={block.id}
+                      className="markdown-editor live-block-editor"
+                      value={block.content}
+                      extensions={markdownEditorExtensions}
+                      basicSetup={{
+                        autocompletion: true,
+                        bracketMatching: true,
+                        closeBrackets: true,
+                        defaultKeymap: true,
+                        foldGutter: false,
+                        highlightActiveLine: true,
+                        highlightActiveLineGutter: false,
+                        highlightSelectionMatches: true,
+                        lineNumbers: false,
+                        searchKeymap: true,
+                      }}
+                      onChange={(value) => updateActiveNoteBlock(block, value)}
+                      onBlur={() => setEditingBlock(null)}
+                      autoFocus
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      key={block.id}
+                      className="live-markdown-block markdown-preview"
+                      onClick={(event) => {
+                        handlePreviewClick(event)
+                        const target = event.target as HTMLElement
+                        if (!target.closest('a')) setEditingBlock({ noteId: activeNote.id, index })
+                      }}
+                      dangerouslySetInnerHTML={{ __html: renderMarkdownBlock(block.content, notesByTitle) }}
+                    />
+                  ),
+                )}
+              </section>
+
+              <section className="relations">
+                <h2>
+                  <Link2 size={18} aria-hidden="true" />
+                  Links
+                </h2>
+                <div className="relation-group">
+                  <strong>Outgoing</strong>
+                  {activeNote?.links.length ? (
+                    activeNote.links.map((link) => (
+                      <button
+                        type="button"
+                        key={link}
+                        onClick={() => {
+                          const note = notesByTitle.get(normalizeTitle(link))
+                          if (note) setActiveId(note.id)
+                        }}
+                        className={notesByTitle.has(normalizeTitle(link)) ? '' : 'missing'}
+                      >
+                        {link}
+                      </button>
+                    ))
+                  ) : (
+                    <span>No links</span>
+                  )}
+                </div>
+                <div className="relation-group">
+                  <strong>Backlinks</strong>
+                  {backlinks.length ? (
+                    backlinks.map((note) => (
+                      <button type="button" key={note.id} onClick={() => setActiveId(note.id)}>
+                        {note.title}
+                      </button>
+                    ))
+                  ) : (
+                    <span>No backlinks</span>
+                  )}
+                </div>
+              </section>
+            </div>
           </>
         ) : (
           <div className="empty-state">Import a vault or create the first note.</div>
         )}
       </section>
-
-      <div
-        className="resize-handle"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize Markdown preview"
-        onMouseDown={startPreviewResize}
-      />
-
-      <aside className="preview-pane">
-        <div className="preview-scroll">
-          <section
-            className="markdown-preview"
-            onClick={handlePreviewClick}
-            dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
-          />
-
-          <section className="relations">
-            <h2>
-              <Link2 size={18} aria-hidden="true" />
-              Links
-            </h2>
-            <div className="relation-group">
-              <strong>Outgoing</strong>
-              {activeNote?.links.length ? (
-                activeNote.links.map((link) => (
-                  <button
-                    type="button"
-                    key={link}
-                    onClick={() => {
-                      const note = notesByTitle.get(normalizeTitle(link))
-                      if (note) setActiveId(note.id)
-                    }}
-                    className={notesByTitle.has(normalizeTitle(link)) ? '' : 'missing'}
-                  >
-                    {link}
-                  </button>
-                ))
-              ) : (
-                <span>No links</span>
-              )}
-            </div>
-            <div className="relation-group">
-              <strong>Backlinks</strong>
-              {backlinks.length ? (
-                backlinks.map((note) => (
-                  <button type="button" key={note.id} onClick={() => setActiveId(note.id)}>
-                    {note.title}
-                  </button>
-                ))
-              ) : (
-                <span>No backlinks</span>
-              )}
-            </div>
-          </section>
-        </div>
-      </aside>
     </main>
   )
 }
@@ -1412,6 +1406,55 @@ function getRelativePath(file: File) {
     /\\/g,
     '/',
   )
+}
+
+function splitMarkdownBlocks(content: string): MarkdownBlock[] {
+  if (!content.trim()) {
+    return [{ id: 'block-0', content: '', startLine: 0, endLine: 0 }]
+  }
+
+  const lines = content.split('\n')
+  const blocks: MarkdownBlock[] = []
+  let startLine = 0
+  let inFence = false
+
+  lines.forEach((line, index) => {
+    if (line.trim().startsWith('```')) inFence = !inFence
+
+    const isBlank = !line.trim()
+    const isLast = index === lines.length - 1
+
+    if ((!inFence && isBlank) || isLast) {
+      const endLine = isBlank && !isLast ? index - 1 : index
+      const blockLines = lines.slice(startLine, endLine + 1)
+
+      if (blockLines.some((item) => item.trim())) {
+        blocks.push({
+          id: `block-${startLine}-${endLine}`,
+          content: blockLines.join('\n'),
+          startLine,
+          endLine,
+        })
+      }
+
+      if (isBlank) startLine = index + 1
+    }
+  })
+
+  return blocks.length ? blocks : [{ id: 'block-0', content, startLine: 0, endLine: lines.length - 1 }]
+}
+
+function renderMarkdownBlock(content: string, notesByTitle: Map<string, Note>) {
+  const linkedContent = content.replace(
+    /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g,
+    (_, target: string, alias: string) => {
+      const note = notesByTitle.get(normalizeTitle(target))
+      const label = alias || target
+      return note ? `[${label}](#note:${note.id})` : `<span class="missing-link">${label}</span>`
+    },
+  )
+
+  return DOMPurify.sanitize(marked.parse(linkedContent) as string)
 }
 
 function guessVaultName(file?: File) {
@@ -1548,10 +1591,6 @@ function getUniqueImportedNotePath(notes: Note[], wantedPath: string) {
   return folderPath
     ? `${folderPath}/${baseName} ${Date.now()}.md`
     : `${baseName} ${Date.now()}.md`
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
 }
 
 function getUniqueNotePath(notes: Note[], folderPath: string) {

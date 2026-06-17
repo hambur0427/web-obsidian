@@ -1,7 +1,7 @@
 .app-shell {
   height: 100vh;
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) 8px var(--preview-width, 380px);
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -641,23 +641,6 @@ button {
   min-height: 0;
 }
 
-.resize-handle {
-  min-height: 0;
-  height: 100vh;
-  border-right: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  background:
-    linear-gradient(var(--border), var(--border)) center / 1px 44px no-repeat,
-    var(--panel);
-  cursor: col-resize;
-}
-
-.resize-handle:hover {
-  background:
-    linear-gradient(var(--accent), var(--accent)) center / 2px 64px no-repeat,
-    var(--control-hover);
-}
-
 .note-header {
   display: flex;
   justify-content: space-between;
@@ -758,6 +741,50 @@ button {
 .markdown-editor .cm-selectionBackground,
 .markdown-editor .cm-focused .cm-selectionBackground {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.live-document {
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 26px 42px;
+  background: var(--editor);
+}
+
+.live-blocks {
+  max-width: 920px;
+}
+
+.live-markdown-block {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+
+.live-markdown-block:hover {
+  border-color: var(--border);
+  background: var(--control-hover);
+}
+
+.live-block-editor {
+  height: auto;
+  margin: 0 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.live-block-editor .cm-editor {
+  height: auto;
+}
+
+.live-block-editor .cm-content {
+  padding: 8px 10px;
 }
 
 .empty-state {
@@ -895,22 +922,6 @@ button {
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 280px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(220px, 38vh);
-  }
-
-  .resize-handle {
-    display: none;
-  }
-
-  .preview-pane {
-    grid-column: 1 / -1;
-    min-height: 0;
-    border-top: 1px solid var(--border);
-  }
-
-  .preview-scroll {
-    height: 100%;
-    min-height: 0;
   }
 }
 
@@ -942,11 +953,6 @@ button {
 
   .editor-pane {
     flex: 1 1 auto;
-    min-height: 0;
-  }
-
-  .preview-pane {
-    flex: 0 0 28vh;
     min-height: 0;
   }
 

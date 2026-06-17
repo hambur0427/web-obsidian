@@ -39,7 +39,7 @@ test('can rename the same markdown file again after blur cancels the first edit'
 
   const firstRenameInput = noteItem.locator('input')
   await expect(firstRenameInput).toBeVisible()
-  await page.locator('.markdown-editor .cm-content').click()
+  await page.locator('.live-markdown-block').first().click()
   await expect(firstRenameInput).toBeHidden()
 
   await noteItem.hover()
