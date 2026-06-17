@@ -310,6 +310,26 @@ const livePreviewField = StateField.define<DecorationSet>({
 export function createLivePreviewExtensions(onNavigate: (target: string) => void) {
   const clickHandler = EditorView.domEventHandlers({
     mousedown(event, view) {
+      const target = event.target as HTMLElement
+
+      // Click anywhere on a block widget → position cursor at the top of the
+      // widget (= start of the fence / table), so the widget disappears and
+      // the raw markdown becomes editable.
+      const blockWidget = target.closest<HTMLElement>(
+        '.cm-preview-codeblock, .cm-preview-table',
+      )
+      if (blockWidget) {
+        event.preventDefault()
+        const rect = blockWidget.getBoundingClientRect()
+        const pos  = view.posAtCoords({ x: rect.left + 4, y: rect.top + 2 })
+        if (pos !== null) {
+          view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
+          view.focus()
+        }
+        return true
+      }
+
+      // Ctrl/Cmd-click on a wiki link → navigate
       if (!event.ctrlKey && !event.metaKey) return false
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
       if (pos === null) return false
