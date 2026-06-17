@@ -15,10 +15,67 @@ const mkHeadings = [1, 2, 3, 4, 5, 6].map((l) => Decoration.mark({ class: `cm-md
 
 // ── Line decorations for code blocks ──────────────────────────────────────────
 
-const lnCode      = Decoration.line({ class: 'cm-code-line' })
-const lnCodeFirst = Decoration.line({ class: 'cm-code-line cm-code-first' })
-const lnCodeLast  = Decoration.line({ class: 'cm-code-line cm-code-last' })
-const lnCodeFence = Decoration.line({ class: 'cm-code-line cm-code-fence' })
+const lnCode       = Decoration.line({ class: 'cm-code-line' })
+const lnCodeFirst  = Decoration.line({ class: 'cm-code-line cm-code-first' })
+const lnCodeLast   = Decoration.line({ class: 'cm-code-line cm-code-last' })
+const lnCodeFence  = Decoration.line({ class: 'cm-code-line cm-code-fence' })
+const hideLine     = Decoration.replace({})
+
+const COPY_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+
+// ── Code header widget (language label + copy button) ─────────────────────────
+
+class CodeHeaderWidget extends WidgetType {
+  private lang: string
+  private code: string
+  constructor(lang: string, code: string) { super(); this.lang = lang; this.code = code }
+
+  eq(other: CodeHeaderWidget) {
+    return other.lang === this.lang && other.code === this.code
+  }
+
+  toDOM() {
+    const bar = document.createElement('div')
+    bar.className = 'cm-code-header'
+
+    const label = document.createElement('span')
+    label.className = 'cm-code-lang'
+    label.textContent = this.lang || 'code'
+    bar.appendChild(label)
+
+    const btn = document.createElement('button')
+    btn.className = 'cm-code-copy'
+    btn.type = 'button'
+    btn.innerHTML = `${COPY_ICON}<span>Copy</span>`
+
+    const code = this.code
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    })
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      void navigator.clipboard.writeText(code).then(() => {
+        const text = btn.querySelector('span')
+        if (text) {
+          text.textContent = 'Copied'
+          btn.classList.add('copied')
+          window.setTimeout(() => {
+            text.textContent = 'Copy'
+            btn.classList.remove('copied')
+          }, 1400)
+        }
+      })
+    })
+    bar.appendChild(btn)
+
+    return bar
+  }
+
+  ignoreEvent() { return true }
+}
 
 // ── Table widget ──────────────────────────────────────────────────────────────
 
@@ -83,9 +140,17 @@ function isTableSep(line: string) {
   return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c))
 }
 
-type CodeBlock  = { type: 'code'; fromLine: number; toLine: number }
+type CodeBlock  = { type: 'code'; fromLine: number; toLine: number; lang: string; code: string }
 type TableBlock = { type: 'table'; fromLine: number; toLine: number; headers: string[]; rows: string[][] }
 type Block = CodeBlock | TableBlock
+
+function makeCodeBlock(doc: Text, fromLine: number, toLine: number): CodeBlock {
+  const openText = doc.line(fromLine).text
+  const lang = /^(?:`{3,}|~{3,})(\w*)/.exec(openText)?.[1] ?? ''
+  const codeLines: string[] = []
+  for (let n = fromLine + 1; n <= toLine - 1; n++) codeLines.push(doc.line(n).text)
+  return { type: 'code', fromLine, toLine, lang, code: codeLines.join('\n') }
+}
 
 function findBlocks(doc: Text): Block[] {
   const blocks: Block[] = []
@@ -99,7 +164,7 @@ function findBlocks(doc: Text): Block[] {
       if (fenceStart === -1) {
         fenceStart = i
       } else {
-        blocks.push({ type: 'code', fromLine: fenceStart, toLine: i })
+        blocks.push(makeCodeBlock(doc, fenceStart, i))
         for (let n = fenceStart; n <= i; n++) consumed.add(n)
         fenceStart = -1
       }
@@ -107,7 +172,7 @@ function findBlocks(doc: Text): Block[] {
   }
   // Unclosed fence → treat to end of doc
   if (fenceStart !== -1) {
-    blocks.push({ type: 'code', fromLine: fenceStart, toLine: doc.lines })
+    blocks.push(makeCodeBlock(doc, fenceStart, doc.lines))
     for (let n = fenceStart; n <= doc.lines; n++) consumed.add(n)
   }
 
@@ -209,21 +274,32 @@ function buildDecorations(state: EditorState): DecorationSet {
     const active = block.fromLine <= curTo && block.toLine >= curFrom
 
     if (block.type === 'code') {
-      // Code stays editable text; we only style it like a block and hide
-      // the ``` fences when the cursor is outside.
+      // Code stays editable text. When the cursor is outside the block we
+      // turn the opening fence into a header bar (language + copy button)
+      // and hide the closing fence; clicking the code still edits in place.
       for (let n = block.fromLine; n <= block.toLine; n++) {
         const line   = doc.line(n)
-        const isFence = n === block.fromLine || n === block.toLine
-        let lineDeco = lnCode
-        if (n === block.fromLine) lineDeco = lnCodeFirst
-        else if (n === block.toLine) lineDeco = lnCodeLast
+        const isOpen  = n === block.fromLine
+        const isClose = n === block.toLine && block.toLine !== block.fromLine
 
-        if (isFence && !active) {
-          // Hide the fence text (keep the line as a thin styled strip)
-          ranges.push(lnCodeFence.range(line.from))
-          if (line.to > line.from) ranges.push(mkHidden.range(line.from, line.to))
+        if (!active && isOpen) {
+          ranges.push(lnCodeFirst.range(line.from))
+          ranges.push(
+            Decoration.replace({
+              widget: new CodeHeaderWidget(block.lang, block.code),
+            }).range(line.from, line.to),
+          )
+        } else if (!active && isClose) {
+          ranges.push(lnCodeLast.range(line.from))
+          if (line.to > line.from) ranges.push(hideLine.range(line.from, line.to))
         } else {
-          ranges.push(lineDeco.range(line.from))
+          if (isOpen) ranges.push(lnCodeFirst.range(line.from))
+          else if (n === block.toLine) ranges.push(lnCodeLast.range(line.from))
+          else ranges.push(lnCode.range(line.from))
+          // Dim the raw ``` markers while editing
+          if (active && (isOpen || n === block.toLine)) {
+            ranges.push(lnCodeFence.range(line.from))
+          }
         }
       }
     } else {

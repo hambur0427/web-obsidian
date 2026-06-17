@@ -808,27 +808,83 @@ button {
 .cm-code-line {
   background: var(--code-bg);
   font-family: var(--mono);
-  font-size: 13px;
-  padding-left: 14px !important;
-  padding-right: 14px !important;
+  font-size: 13.5px;
+  line-height: 1.7;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
 }
 
 .cm-code-first {
-  border-top-left-radius: 7px;
-  border-top-right-radius: 7px;
-  padding-top: 4px;
-  margin-top: 2px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  margin-top: 4px;
 }
 
 .cm-code-last {
-  border-bottom-left-radius: 7px;
-  border-bottom-right-radius: 7px;
-  padding-bottom: 4px;
-  margin-bottom: 14px;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .cm-code-fence {
   color: var(--muted);
+}
+
+/* Header bar: language label + copy button (shown when cursor is outside) */
+
+.cm-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 2px 0;
+}
+
+.cm-code-lang {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cm-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition:
+    opacity 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.cm-code-copy:hover,
+.cm-code-copy:focus-visible {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--text-h);
+}
+
+.cm-code-copy.copied {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cm-code-copy svg {
+  flex: 0 0 auto;
 }
 
 /* Table widget rendered by livePreview.ts */
