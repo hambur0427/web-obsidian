@@ -6,6 +6,13 @@ import type {
   FormEvent,
   MouseEvent as ReactMouseEvent,
 } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { markdown } from '@codemirror/lang-markdown'
+import { historyKeymap } from '@codemirror/commands'
+import { EditorView, keymap } from '@codemirror/view'
+import { EditorState } from '@codemirror/state'
+import { tags } from '@lezer/highlight'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import {
@@ -101,6 +108,24 @@ const API_SESSION_ENDPOINT = '/api/session'
 const API_LOGIN_ENDPOINT = '/api/login'
 const API_LOGOUT_ENDPOINT = '/api/logout'
 const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+const markdownHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading, color: 'var(--text-h)', fontWeight: '700' },
+  { tag: tags.strong, color: 'var(--accent)', fontWeight: '700' },
+  { tag: tags.emphasis, color: 'var(--accent)', fontStyle: 'italic' },
+  { tag: tags.link, color: 'var(--accent)' },
+  { tag: tags.url, color: 'var(--accent)' },
+  { tag: tags.monospace, color: '#9a5b00' },
+  { tag: tags.meta, color: 'var(--muted)' },
+  { tag: tags.quote, color: '#5f6f52' },
+  { tag: tags.strikethrough, color: 'var(--muted)', textDecoration: 'line-through' },
+])
+const markdownEditorExtensions = [
+  markdown(),
+  syntaxHighlighting(markdownHighlightStyle),
+  keymap.of(historyKeymap),
+  EditorState.tabSize.of(2),
+  EditorView.lineWrapping,
+]
 
 const sampleVault: VaultState = {
   name: 'Demo Cloud Vault',
@@ -1302,10 +1327,23 @@ function App() {
               </div>
               <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
             </header>
-            <textarea
+            <CodeMirror
+              className="markdown-editor"
               value={activeNote.content}
-              onChange={(event) => updateActiveNote(event.target.value)}
-              spellCheck="false"
+              extensions={markdownEditorExtensions}
+              basicSetup={{
+                autocompletion: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                defaultKeymap: true,
+                foldGutter: false,
+                highlightActiveLine: true,
+                highlightActiveLineGutter: false,
+                highlightSelectionMatches: true,
+                lineNumbers: false,
+                searchKeymap: true,
+              }}
+              onChange={updateActiveNote}
               aria-label="Markdown editor"
             />
           </>

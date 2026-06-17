@@ -708,17 +708,43 @@ button {
   white-space: nowrap;
 }
 
-textarea {
+.markdown-editor {
   width: 100%;
   height: 100%;
-  box-sizing: border-box;
-  resize: none;
-  border: 0;
-  outline: 0;
-  padding: 24px 26px 40px;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--editor);
+}
+
+.markdown-editor .cm-editor {
+  height: 100%;
   background: var(--editor);
   color: var(--text-h);
   font: 15px/1.7 var(--mono);
+}
+
+.markdown-editor .cm-scroller {
+  font-family: var(--mono);
+}
+
+.markdown-editor .cm-content {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 24px 26px 40px;
+  caret-color: var(--accent);
+}
+
+.markdown-editor .cm-focused {
+  outline: 0;
+}
+
+.markdown-editor .cm-activeLine {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.markdown-editor .cm-selectionBackground,
+.markdown-editor .cm-focused .cm-selectionBackground {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .empty-state {
