@@ -240,7 +240,7 @@ button {
   text-align: left;
   padding: 5px 8px;
   padding-left: var(--tree-padding-left, 10px);
-  border-color: transparent;
+  border: 0;
   background: transparent;
   color: var(--text-h);
   font-size: 13px;
@@ -318,15 +318,20 @@ button {
 
 .note-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 16px 18px minmax(0, 1fr);
+  gap: 8px;
   align-items: start;
   text-align: left;
   min-width: 0;
   border: 0;
   background: transparent;
   padding: 6px 8px;
-  padding-left: calc(var(--tree-padding-left, 10px) + 24px);
+  padding-left: var(--tree-padding-left, 10px);
+}
+
+.tree-chevron-spacer {
+  width: 16px;
+  height: 16px;
 }
 
 .note-row.editing {

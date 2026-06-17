@@ -1567,6 +1567,7 @@ function renderNoteNode(
     >
       {isRenaming ? (
         <div className="note-row editing">
+          <span className="tree-chevron-spacer" aria-hidden="true" />
           <FileText size={16} aria-hidden="true" />
           <input
             value={options.renameDraft}
@@ -1600,6 +1601,7 @@ function renderNoteNode(
           }}
           onDragEnd={options.onDragEnd}
         >
+          <span className="tree-chevron-spacer" aria-hidden="true" />
           <FileText size={16} aria-hidden="true" />
           <span>
             <strong>{note.title}</strong>
