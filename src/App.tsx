@@ -124,6 +124,7 @@ marked.use({
 function App() {
   const directoryInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const hasLocalVaultRef = useRef(Boolean(localStorage.getItem(STORAGE_KEY)))
   const [vault, setVault] = useState<VaultState>(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
     return saved ? JSON.parse(saved) : sampleVault
@@ -141,6 +142,7 @@ function App() {
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const initialVaultSignatureRef = useRef(JSON.stringify(pruneExpiredTrash(vault)))
   const lastSavedCloudSignatureRef = useRef('')
 
   useEffect(() => {
@@ -181,7 +183,9 @@ function App() {
         const vaultResponse = await fetch(API_VAULT_ENDPOINT, { signal: controller.signal })
 
         if (vaultResponse.status === 404) {
-          lastSavedCloudSignatureRef.current = ''
+          lastSavedCloudSignatureRef.current = hasLocalVaultRef.current
+            ? ''
+            : initialVaultSignatureRef.current
           setCloudStatus('Autosave ready')
           setCloudInitialized(true)
           return
