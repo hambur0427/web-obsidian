@@ -1046,7 +1046,11 @@ function App() {
                     <button
                       type="button"
                       className="path-edit-button"
-                      onClick={() => startRenameNote(activeNote.id)}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        startRenameNote(activeNote.id)
+                      }}
                       title="Rename Markdown file"
                     >
                       {activeNote.path}
@@ -1054,7 +1058,11 @@ function App() {
                     <button
                       type="button"
                       className="title-edit-button"
-                      onClick={() => startRenameNote(activeNote.id)}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        startRenameNote(activeNote.id)
+                      }}
                       title="Rename Markdown file"
                     >
                       {activeNote.title}
@@ -1567,7 +1575,12 @@ function renderNoteNode(
           />
         </div>
       ) : (
-        <button type="button" className="note-row" onClick={() => options.onSelectNote(note.id)}>
+        <button
+          type="button"
+          className="note-row"
+          onClick={() => options.onSelectNote(note.id)}
+          onDoubleClick={() => options.onRenameNote(note.id)}
+        >
           <FileText size={16} aria-hidden="true" />
           <span>
             <strong>{note.title}</strong>
@@ -1578,7 +1591,16 @@ function renderNoteNode(
       <button
         type="button"
         className="note-action-button"
-        onClick={() => options.onRenameNote(note.id)}
+        draggable={false}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          options.onRenameNote(note.id)
+        }}
         title="Rename Markdown file"
       >
         <Pencil size={14} aria-hidden="true" />
@@ -1586,7 +1608,16 @@ function renderNoteNode(
       <button
         type="button"
         className="note-action-button danger"
-        onClick={() => options.onTrashNote(note.id)}
+        draggable={false}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          options.onTrashNote(note.id)
+        }}
         title="Move to trash"
       >
         <Trash2 size={14} aria-hidden="true" />
