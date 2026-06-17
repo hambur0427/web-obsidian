@@ -20,7 +20,7 @@ import {
   Cloud,
   ChevronDown,
   ChevronRight,
-  Copy,
+  Eye,
   FileDown,
   FilePlus,
   FileText,
@@ -72,23 +72,6 @@ type NoteTreeNode = {
   path: string
   folders: NoteTreeNode[]
   notes: Note[]
-}
-
-type MarkdownBlock = {
-  id: string
-  content: string
-  startLine: number
-  endLine: number
-}
-
-type EditingBlock = {
-  noteId: string
-  index: number
-}
-
-type MarkdownTable = {
-  headers: string[]
-  rows: string[][]
 }
 
 type ContextMenuState = {
@@ -203,7 +186,7 @@ function App() {
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
-  const [editingBlock, setEditingBlock] = useState<EditingBlock | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
   const initialVaultSignatureRef = useRef(JSON.stringify(pruneExpiredTrash(vault)))
   const lastSavedCloudSignatureRef = useRef('')
 
@@ -417,9 +400,16 @@ function App() {
     )
   }, [activeNote, activeNotes])
 
-  const markdownBlocks = useMemo(
-    () => splitMarkdownBlocks(activeNote?.content ?? ''),
-    [activeNote?.content],
+  useEffect(() => {
+    setIsEditing(false)
+  }, [activeId])
+
+  const editorExtensions = useMemo(
+    () => [
+      ...markdownEditorExtensions,
+      keymap.of([{ key: 'Escape', run: () => { setIsEditing(false); return true } }]),
+    ],
+    [],
   )
 
   async function login(event: FormEvent<HTMLFormElement>) {
@@ -946,19 +936,6 @@ function App() {
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Unsaved local changes')
   }
 
-  function updateActiveNoteBlock(block: MarkdownBlock, content: string) {
-    if (!activeNote) return
-
-    const lines = activeNote.content.split('\n')
-    const nextLines = [
-      ...lines.slice(0, block.startLine),
-      ...content.split('\n'),
-      ...lines.slice(block.endLine + 1),
-    ]
-
-    updateActiveNote(nextLines.join('\n'))
-  }
-
   async function downloadVaultZip() {
     const zip = new JSZip()
     const activeVaultNotes = getActiveNotes(vault.notes)
@@ -1327,64 +1304,103 @@ function App() {
                   </>
                 )}
               </div>
-              <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
+              <div className="note-header-right">
+                <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
+                <button
+                  type="button"
+                  className="mode-toggle"
+                  onClick={() => setIsEditing((prev) => !prev)}
+                  title={isEditing ? 'Switch to preview' : 'Switch to edit'}
+                >
+                  {isEditing ? (
+                    <Eye size={15} aria-hidden="true" />
+                  ) : (
+                    <Pencil size={15} aria-hidden="true" />
+                  )}
+                  {isEditing ? 'Preview' : 'Edit'}
+                </button>
+              </div>
             </header>
-            <div className="live-document" aria-label="Markdown editor">
-              <section className="live-blocks">
-                {markdownBlocks.map((block, index) =>
-                  renderLiveMarkdownBlock({
-                    activeNoteId: activeNote.id,
-                    block,
-                    editingBlock,
-                    index,
-                    notesByTitle,
-                    onEdit: () => setEditingBlock({ noteId: activeNote.id, index }),
-                    onExitEdit: () => setEditingBlock(null),
-                    onPreviewClick: handlePreviewClick,
-                    onUpdate: updateActiveNoteBlock,
-                  }),
-                )}
-              </section>
-
-              <section className="relations">
-                <h2>
-                  <Link2 size={18} aria-hidden="true" />
-                  Links
-                </h2>
-                <div className="relation-group">
-                  <strong>Outgoing</strong>
-                  {activeNote?.links.length ? (
-                    activeNote.links.map((link) => (
-                      <button
-                        type="button"
-                        key={link}
-                        onClick={() => {
-                          const note = notesByTitle.get(normalizeTitle(link))
-                          if (note) setActiveId(note.id)
-                        }}
-                        className={notesByTitle.has(normalizeTitle(link)) ? '' : 'missing'}
-                      >
-                        {link}
-                      </button>
-                    ))
-                  ) : (
-                    <span>No links</span>
-                  )}
-                </div>
-                <div className="relation-group">
-                  <strong>Backlinks</strong>
-                  {backlinks.length ? (
-                    backlinks.map((note) => (
-                      <button type="button" key={note.id} onClick={() => setActiveId(note.id)}>
-                        {note.title}
-                      </button>
-                    ))
-                  ) : (
-                    <span>No backlinks</span>
-                  )}
-                </div>
-              </section>
-            </div>
+            {isEditing ? (
+              <CodeMirror
+                className="markdown-editor"
+                value={activeNote.content}
+                extensions={editorExtensions}
+                basicSetup={{
+                  autocompletion: true,
+                  bracketMatching: true,
+                  closeBrackets: true,
+                  defaultKeymap: true,
+                  foldGutter: false,
+                  highlightActiveLine: true,
+                  highlightActiveLineGutter: false,
+                  highlightSelectionMatches: true,
+                  lineNumbers: false,
+                  searchKeymap: true,
+                }}
+                onChange={updateActiveNote}
+                autoFocus
+              />
+            ) : (
+              <div className="live-document" aria-label="Note preview">
+                <div
+                  className="markdown-preview full-note-preview"
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    handlePreviewClick(event)
+                    const target = event.target as HTMLElement
+                    if (!target.closest('a, button')) setIsEditing(true)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    setIsEditing(true)
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: renderMarkdownContent(activeNote.content, notesByTitle),
+                  }}
+                />
+                <section className="relations">
+                  <h2>
+                    <Link2 size={18} aria-hidden="true" />
+                    Links
+                  </h2>
+                  <div className="relation-group">
+                    <strong>Outgoing</strong>
+                    {activeNote?.links.length ? (
+                      activeNote.links.map((link) => (
+                        <button
+                          type="button"
+                          key={link}
+                          onClick={() => {
+                            const note = notesByTitle.get(normalizeTitle(link))
+                            if (note) setActiveId(note.id)
+                          }}
+                          className={notesByTitle.has(normalizeTitle(link)) ? '' : 'missing'}
+                        >
+                          {link}
+                        </button>
+                      ))
+                    ) : (
+                      <span>No links</span>
+                    )}
+                  </div>
+                  <div className="relation-group">
+                    <strong>Backlinks</strong>
+                    {backlinks.length ? (
+                      backlinks.map((note) => (
+                        <button type="button" key={note.id} onClick={() => setActiveId(note.id)}>
+                          {note.title}
+                        </button>
+                      ))
+                    ) : (
+                      <span>No backlinks</span>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
           </>
         ) : (
           <div className="empty-state">Import a vault or create the first note.</div>
@@ -1401,43 +1417,7 @@ function getRelativePath(file: File) {
   )
 }
 
-function splitMarkdownBlocks(content: string): MarkdownBlock[] {
-  if (!content.trim()) {
-    return [{ id: 'block-0', content: '', startLine: 0, endLine: 0 }]
-  }
-
-  const lines = content.split('\n')
-  const blocks: MarkdownBlock[] = []
-  let startLine = 0
-  let inFence = false
-
-  lines.forEach((line, index) => {
-    if (line.trim().startsWith('```')) inFence = !inFence
-
-    const isBlank = !line.trim()
-    const isLast = index === lines.length - 1
-
-    if ((!inFence && isBlank) || isLast) {
-      const endLine = isBlank && !isLast ? index - 1 : index
-      const blockLines = lines.slice(startLine, endLine + 1)
-
-      if (blockLines.some((item) => item.trim())) {
-        blocks.push({
-          id: `block-${startLine}-${endLine}`,
-          content: blockLines.join('\n'),
-          startLine,
-          endLine,
-        })
-      }
-
-      if (isBlank) startLine = index + 1
-    }
-  })
-
-  return blocks.length ? blocks : [{ id: 'block-0', content, startLine: 0, endLine: lines.length - 1 }]
-}
-
-function renderMarkdownBlock(content: string, notesByTitle: Map<string, Note>) {
+function renderMarkdownContent(content: string, notesByTitle: Map<string, Note>) {
   const linkedContent = content.replace(
     /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g,
     (_, target: string, alias: string) => {
@@ -2049,318 +2029,6 @@ function renderNoteNode(
       </button>
     </div>
   )
-}
-
-function renderLiveMarkdownBlock(options: {
-  activeNoteId: string
-  block: MarkdownBlock
-  editingBlock: EditingBlock | null
-  index: number
-  notesByTitle: Map<string, Note>
-  onEdit: () => void
-  onExitEdit: () => void
-  onPreviewClick: (event: ReactMouseEvent<HTMLElement>) => void
-  onUpdate: (block: MarkdownBlock, content: string) => void
-}) {
-  const isEditing =
-    options.editingBlock?.noteId === options.activeNoteId &&
-    options.editingBlock.index === options.index
-  const heading = parseMarkdownHeading(options.block.content)
-  const table = parseMarkdownTable(options.block.content)
-  const isCodeFence = isFencedCodeBlock(options.block.content)
-
-  if (isEditing && heading) {
-    return (
-      <input
-        key={options.block.id}
-        className={`live-heading-input live-heading-${heading.level}`}
-        value={options.block.content}
-        autoFocus
-        onChange={(event) => options.onUpdate(options.block, event.target.value)}
-        onBlur={options.onExitEdit}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            options.onExitEdit()
-          }
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            options.onExitEdit()
-          }
-        }}
-      />
-    )
-  }
-
-  if (isEditing && table) {
-    return (
-      <MarkdownTableEditor
-        key={options.block.id}
-        table={table}
-        onExitEdit={options.onExitEdit}
-        onUpdate={(nextTable) => options.onUpdate(options.block, serializeMarkdownTable(nextTable))}
-      />
-    )
-  }
-
-  if (isEditing) {
-    return (
-      <CodeMirror
-        key={options.block.id}
-        className={`markdown-editor live-block-editor${isCodeFence ? ' live-code-editor' : ''}`}
-        value={options.block.content}
-        extensions={markdownEditorExtensions}
-        basicSetup={{
-          autocompletion: true,
-          bracketMatching: true,
-          closeBrackets: true,
-          defaultKeymap: true,
-          foldGutter: false,
-          highlightActiveLine: true,
-          highlightActiveLineGutter: false,
-          highlightSelectionMatches: true,
-          lineNumbers: false,
-          searchKeymap: true,
-        }}
-        onChange={(value) => options.onUpdate(options.block, value)}
-        onBlur={options.onExitEdit}
-        autoFocus
-      />
-    )
-  }
-
-  return (
-    <div
-      key={options.block.id}
-      className={`live-markdown-block markdown-preview${isCodeFence ? ' live-code-preview' : ''}`}
-      role="button"
-      tabIndex={0}
-      onClick={(event) => {
-        options.onPreviewClick(event)
-        const target = event.target as HTMLElement
-        if (!target.closest('a, button')) options.onEdit()
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
-        event.preventDefault()
-        options.onEdit()
-      }}
-    >
-      {isCodeFence ? (
-        <button
-          type="button"
-          className="code-copy-button"
-          title="Copy code"
-          onClick={(event) => {
-            event.stopPropagation()
-            void navigator.clipboard.writeText(getFencedCodeBody(options.block.content))
-          }}
-        >
-          <Copy size={14} aria-hidden="true" />
-          Copy
-        </button>
-      ) : null}
-      <div
-        dangerouslySetInnerHTML={{
-          __html: renderMarkdownBlock(options.block.content, options.notesByTitle),
-        }}
-      />
-    </div>
-  )
-}
-
-function MarkdownTableEditor(options: {
-  table: MarkdownTable
-  onUpdate: (table: MarkdownTable) => void
-  onExitEdit: () => void
-}) {
-  function updateHeader(columnIndex: number, value: string) {
-    options.onUpdate({
-      ...options.table,
-      headers: options.table.headers.map((header, index) =>
-        index === columnIndex ? value : header,
-      ),
-    })
-  }
-
-  function updateCell(rowIndex: number, columnIndex: number, value: string) {
-    options.onUpdate({
-      ...options.table,
-      rows: options.table.rows.map((row, index) =>
-        index === rowIndex
-          ? row.map((cell, cellIndex) => (cellIndex === columnIndex ? value : cell))
-          : row,
-      ),
-    })
-  }
-
-  function addColumn() {
-    options.onUpdate({
-      headers: [...options.table.headers, 'Column'],
-      rows: options.table.rows.map((row) => [...row, '']),
-    })
-  }
-
-  function removeColumn() {
-    if (options.table.headers.length <= 1) return
-
-    options.onUpdate({
-      headers: options.table.headers.slice(0, -1),
-      rows: options.table.rows.map((row) => row.slice(0, -1)),
-    })
-  }
-
-  function addRow() {
-    options.onUpdate({
-      ...options.table,
-      rows: [...options.table.rows, options.table.headers.map(() => '')],
-    })
-  }
-
-  function removeRow() {
-    if (!options.table.rows.length) return
-
-    options.onUpdate({
-      ...options.table,
-      rows: options.table.rows.slice(0, -1),
-    })
-  }
-
-  return (
-    <div className="live-table-editor">
-      <div className="live-table-toolbar">
-        <button type="button" onClick={addColumn}>
-          + Column
-        </button>
-        <button type="button" onClick={removeColumn} disabled={options.table.headers.length <= 1}>
-          - Column
-        </button>
-        <button type="button" onClick={addRow}>
-          + Row
-        </button>
-        <button type="button" onClick={removeRow} disabled={!options.table.rows.length}>
-          - Row
-        </button>
-        <button type="button" onClick={options.onExitEdit}>
-          Done
-        </button>
-      </div>
-      <div className="live-table-scroll">
-        <table>
-          <thead>
-            <tr>
-              {options.table.headers.map((header, index) => (
-                <th key={`head-${index}`}>
-                  <input
-                    value={header}
-                    onChange={(event) => updateHeader(index, event.target.value)}
-                  />
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {options.table.rows.map((row, rowIndex) => (
-              <tr key={`row-${rowIndex}`}>
-                {options.table.headers.map((_, columnIndex) => (
-                  <td key={`cell-${rowIndex}-${columnIndex}`}>
-                    <input
-                      value={row[columnIndex] ?? ''}
-                      onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function parseMarkdownHeading(content: string) {
-  const match = /^(#{1,6})\s+(.+?)\s*$/.exec(content)
-  if (!match) return null
-
-  return {
-    level: match[1].length,
-    text: match[2],
-  }
-}
-
-function isFencedCodeBlock(content: string) {
-  return content.trimStart().startsWith('```')
-}
-
-function getFencedCodeBody(content: string) {
-  const lines = content.replace(/\r\n/g, '\n').split('\n')
-  const openingFenceIndex = lines.findIndex((line) => line.trimStart().startsWith('```'))
-  if (openingFenceIndex === -1) return content
-
-  const closingFenceIndex = lines
-    .slice(openingFenceIndex + 1)
-    .findIndex((line) => line.trimStart().startsWith('```'))
-  const endIndex =
-    closingFenceIndex === -1 ? lines.length : openingFenceIndex + 1 + closingFenceIndex
-
-  return lines.slice(openingFenceIndex + 1, endIndex).join('\n')
-}
-
-function parseMarkdownTable(content: string): MarkdownTable | null {
-  const lines = content
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-
-  if (lines.length < 2) return null
-  if (!isMarkdownTableSeparator(lines[1])) return null
-
-  const headers = splitTableRow(lines[0])
-  if (!headers.length) return null
-
-  const rows = lines.slice(2).map((line) => normalizeTableRow(splitTableRow(line), headers.length))
-
-  return {
-    headers,
-    rows,
-  }
-}
-
-function serializeMarkdownTable(table: MarkdownTable) {
-  const headers = table.headers.map(normalizeTableCell)
-  const separator = headers.map(() => '---')
-  const rows = table.rows.map((row) =>
-    normalizeTableRow(row, headers.length).map(normalizeTableCell),
-  )
-
-  return [
-    serializeTableRow(headers),
-    serializeTableRow(separator),
-    ...rows.map(serializeTableRow),
-  ].join('\n')
-}
-
-function isMarkdownTableSeparator(line: string) {
-  const cells = splitTableRow(line)
-  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()))
-}
-
-function splitTableRow(line: string) {
-  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
-  return trimmed.split('|').map((cell) => cell.trim())
-}
-
-function normalizeTableRow(row: string[], columnCount: number) {
-  return Array.from({ length: columnCount }, (_, index) => row[index] ?? '')
-}
-
-function normalizeTableCell(cell: string) {
-  return cell.replace(/\|/g, '\\|').trim()
-}
-
-function serializeTableRow(cells: string[]) {
-  return `| ${cells.join(' | ')} |`
 }
 
 function getTreeRowStyle(level: number) {
