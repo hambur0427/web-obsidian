@@ -1,5 +1,6 @@
 import { RangeSetBuilder } from '@codemirror/state'
-import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view'
+import { Decoration, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view'
+import type { DecorationSet } from '@codemirror/view'
 
 type Item = { from: number; to: number; deco: Decoration }
 
