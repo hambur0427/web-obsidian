@@ -273,9 +273,12 @@ button {
   gap: 4px;
   overflow: auto;
   padding-right: 2px;
+  padding-bottom: 8px;
+  scrollbar-gutter: stable;
 }
 
 .tree-node {
+  flex: 0 0 auto;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -303,6 +306,7 @@ button {
 .folder-row-wrap,
 .folder-row,
 .note-row-wrap {
+  flex: 0 0 auto;
   position: relative;
   z-index: 1;
   width: 100%;
@@ -496,6 +500,7 @@ button {
 }
 
 .trash-section {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;

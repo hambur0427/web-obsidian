@@ -495,16 +495,12 @@ function App() {
       }),
     )
 
-    const importedVault = {
-      name: vaultName || 'Imported Vault',
-      folders: collectFoldersFromNotes(notes),
-      notes: notes.sort((a, b) => a.path.localeCompare(b.path)),
-      importedAt: new Date().toISOString(),
-    }
+    const importedNotes = notes.sort((a, b) => a.path.localeCompare(b.path))
+    const { vault: mergedVault, firstImportedId } = mergeImportedNotes(vault, importedNotes, vaultName)
 
-    setVault(importedVault)
-    setActiveId(importedVault.notes[0]?.id ?? '')
-    setExpandedFolders(collectFolderPaths(buildNoteTree(importedVault.notes, importedVault.folders)))
+    setVault(mergedVault)
+    setActiveId(firstImportedId || activeId)
+    setExpandedFolders(collectFolderPaths(buildNoteTree(getActiveNotes(mergedVault.notes), mergedVault.folders)))
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Imported locally')
     event.target.value = ''
   }
@@ -1504,6 +1500,60 @@ function formatDuration(totalSeconds: number) {
   if (minutes <= 0) return `${seconds}s`
   if (seconds <= 0) return `${minutes}m`
   return `${minutes}m ${seconds}s`
+}
+
+function mergeImportedNotes(currentVault: VaultState, importedNotes: Note[], importedVaultName: string) {
+  const nextNotes = [...currentVault.notes]
+  let firstImportedId = ''
+
+  importedNotes.forEach((note) => {
+    const nextPath = getUniqueImportedNotePath(nextNotes, note.path)
+    const nextTitle = nextPath.split('/').pop()?.replace(/\.md$/i, '') || note.title
+    const nextNote = {
+      ...note,
+      id: nextPath.toLowerCase(),
+      title: nextTitle,
+      path: nextPath,
+      deletedAt: undefined,
+    }
+
+    nextNotes.push(nextNote)
+    if (!firstImportedId) firstImportedId = nextNote.id
+  })
+
+  const folders = sortFolderPaths([
+    ...(currentVault.folders ?? []),
+    ...collectFoldersFromNotes(nextNotes),
+  ])
+
+  return {
+    vault: {
+      ...currentVault,
+      name: currentVault.name || importedVaultName || 'Cloud Vault',
+      folders,
+      notes: nextNotes.sort((a, b) => a.path.localeCompare(b.path)),
+      importedAt: new Date().toISOString(),
+    },
+    firstImportedId,
+  }
+}
+
+function getUniqueImportedNotePath(notes: Note[], wantedPath: string) {
+  const existingPaths = new Set(notes.map((note) => note.path.toLowerCase()))
+  if (!existingPaths.has(wantedPath.toLowerCase())) return wantedPath
+
+  const folderPath = getParentFolder(wantedPath)
+  const fileName = wantedPath.split('/').pop() || 'Untitled.md'
+  const baseName = fileName.replace(/\.md$/i, '')
+
+  for (let index = 2; index < 10000; index += 1) {
+    const nextPath = folderPath ? `${folderPath}/${baseName} ${index}.md` : `${baseName} ${index}.md`
+    if (!existingPaths.has(nextPath.toLowerCase())) return nextPath
+  }
+
+  return folderPath
+    ? `${folderPath}/${baseName} ${Date.now()}.md`
+    : `${baseName} ${Date.now()}.md`
 }
 
 function clamp(value: number, min: number, max: number) {
