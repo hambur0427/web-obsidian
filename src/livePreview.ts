@@ -19,7 +19,6 @@ const lnCode       = Decoration.line({ class: 'cm-code-line' })
 const lnCodeFirst  = Decoration.line({ class: 'cm-code-line cm-code-first' })
 const lnCodeLast   = Decoration.line({ class: 'cm-code-line cm-code-last' })
 const lnCodeFence  = Decoration.line({ class: 'cm-code-line cm-code-fence' })
-const hideLine     = Decoration.replace({})
 
 const COPY_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
@@ -35,9 +34,6 @@ class CopyButtonWidget extends WidgetType {
   }
 
   toDOM() {
-    const wrap = document.createElement('span')
-    wrap.className = 'cm-code-topbar'
-
     const btn = document.createElement('button')
     btn.className = 'cm-code-copy'
     btn.type = 'button'
@@ -63,9 +59,8 @@ class CopyButtonWidget extends WidgetType {
         }
       })
     })
-    wrap.appendChild(btn)
 
-    return wrap
+    return btn
   }
 
   ignoreEvent() { return true }
@@ -268,32 +263,27 @@ function buildDecorations(state: EditorState): DecorationSet {
     const active = block.fromLine <= curTo && block.toLine >= curFrom
 
     if (block.type === 'code') {
-      // Code stays editable text. When the cursor is outside the block we
-      // turn the opening fence into a header bar (language + copy button)
-      // and hide the closing fence; clicking the code still edits in place.
+      // Code is always editable text. The ``` fence lines stay visible
+      // (dimmed) as reserved top/bottom strips; the copy button sits on the
+      // right of the opening fence line, on the same row as the ```.
       for (let n = block.fromLine; n <= block.toLine; n++) {
-        const line   = doc.line(n)
+        const line    = doc.line(n)
         const isOpen  = n === block.fromLine
-        const isClose = n === block.toLine && block.toLine !== block.fromLine
+        const isClose = n === block.toLine
 
-        if (!active && isOpen) {
-          ranges.push(lnCodeFirst.range(line.from))
+        if (isOpen) ranges.push(lnCodeFirst.range(line.from))
+        else if (isClose) ranges.push(lnCodeLast.range(line.from))
+        else ranges.push(lnCode.range(line.from))
+
+        if (isOpen || isClose) ranges.push(lnCodeFence.range(line.from))
+
+        if (isOpen && !active) {
           ranges.push(
-            Decoration.replace({
+            Decoration.widget({
               widget: new CopyButtonWidget(block.code),
-            }).range(line.from, line.to),
+              side: 1,
+            }).range(line.to),
           )
-        } else if (!active && isClose) {
-          ranges.push(lnCodeLast.range(line.from))
-          if (line.to > line.from) ranges.push(hideLine.range(line.from, line.to))
-        } else {
-          if (isOpen) ranges.push(lnCodeFirst.range(line.from))
-          else if (n === block.toLine) ranges.push(lnCodeLast.range(line.from))
-          else ranges.push(lnCode.range(line.from))
-          // Dim the raw ``` markers while editing
-          if (active && (isOpen || n === block.toLine)) {
-            ranges.push(lnCodeFence.range(line.from))
-          }
         }
       }
     } else {
