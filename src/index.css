@@ -52,16 +52,21 @@
 }
 
 html {
+  height: 100%;
+  overflow: hidden;
   background: var(--bg);
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  height: 100%;
+  overflow: hidden;
 }
 
 #root {
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
 }
 
 ::selection {
