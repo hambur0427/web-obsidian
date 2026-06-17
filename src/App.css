@@ -803,52 +803,41 @@ button {
   cursor: pointer;
 }
 
-/* Block widgets rendered by livePreview.ts */
+/* Code blocks: editable text styled like a block (livePreview.ts) */
 
-.cm-preview-codeblock {
-  display: block;
-  margin: 2px 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+.cm-code-line {
   background: var(--code-bg);
-  overflow: hidden;
-  cursor: text;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.cm-preview-codelang {
-  display: block;
-  padding: 5px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-
-.cm-preview-codeblock pre {
-  margin: 0;
-  padding: 14px;
-  overflow: auto;
   font-family: var(--mono);
   font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-h);
+  padding-left: 14px !important;
+  padding-right: 14px !important;
 }
 
-.cm-preview-codeblock code {
-  background: none;
-  padding: 0;
-  border-radius: 0;
-  font-size: inherit;
+.cm-code-first {
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+  padding-top: 4px;
+  margin-top: 2px;
 }
+
+.cm-code-last {
+  border-bottom-left-radius: 7px;
+  border-bottom-right-radius: 7px;
+  padding-bottom: 4px;
+  margin-bottom: 14px;
+}
+
+.cm-code-fence {
+  color: var(--muted);
+}
+
+/* Table widget rendered by livePreview.ts */
 
 .cm-preview-table {
   display: block;
   margin: 2px 0 14px;
   overflow-x: auto;
-  cursor: text;
+  cursor: pointer;
 }
 
 .cm-preview-table table {
@@ -869,12 +858,6 @@ button {
   background: var(--control-hover);
   font-weight: 700;
   color: var(--text-h);
-}
-
-/* Make widget spans display as blocks so code/table widgets expand full width */
-.cm-content span:has(> .cm-preview-codeblock),
-.cm-content span:has(> .cm-preview-table) {
-  display: block;
 }
 
 .relations-footer {

@@ -1,9 +1,7 @@
-import { RangeSetBuilder, StateField } from '@codemirror/state'
-import type { EditorState, Text } from '@codemirror/state'
+import { StateField } from '@codemirror/state'
+import type { EditorState, Range, Text } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
-
-type Item = { from: number; to: number; deco: Decoration }
 
 // ── Inline marks ─────────────────────────────────────────────────────────────
 
@@ -15,34 +13,14 @@ const mkStrike   = Decoration.mark({ class: 'cm-md-strike' })
 const mkWikiLink = Decoration.mark({ class: 'cm-md-wikilink' })
 const mkHeadings = [1, 2, 3, 4, 5, 6].map((l) => Decoration.mark({ class: `cm-md-h${l}` }))
 
-// ── Block widgets ─────────────────────────────────────────────────────────────
+// ── Line decorations for code blocks ──────────────────────────────────────────
 
-class CodeBlockWidget extends WidgetType {
-  private lang: string
-  private content: string
-  constructor(lang: string, content: string) { super(); this.lang = lang; this.content = content }
+const lnCode      = Decoration.line({ class: 'cm-code-line' })
+const lnCodeFirst = Decoration.line({ class: 'cm-code-line cm-code-first' })
+const lnCodeLast  = Decoration.line({ class: 'cm-code-line cm-code-last' })
+const lnCodeFence = Decoration.line({ class: 'cm-code-line cm-code-fence' })
 
-  eq(other: CodeBlockWidget) {
-    return other.lang === this.lang && other.content === this.content
-  }
-
-  toDOM() {
-    const wrap = document.createElement('div')
-    wrap.className = 'cm-preview-codeblock'
-    if (this.lang) {
-      const label = document.createElement('span')
-      label.className = 'cm-preview-codelang'
-      label.textContent = this.lang
-      wrap.appendChild(label)
-    }
-    const pre  = document.createElement('pre')
-    const code = document.createElement('code')
-    code.textContent = this.content
-    pre.appendChild(code)
-    wrap.appendChild(pre)
-    return wrap
-  }
-}
+// ── Table widget ──────────────────────────────────────────────────────────────
 
 class TableWidget extends WidgetType {
   private headers: string[]
@@ -90,9 +68,11 @@ class TableWidget extends WidgetType {
     wrap.appendChild(table)
     return wrap
   }
+
+  ignoreEvent() { return false }
 }
 
-// ── Block range detection ─────────────────────────────────────────────────────
+// ── Block detection ───────────────────────────────────────────────────────────
 
 function splitRow(line: string): string[] {
   return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((s) => s.trim())
@@ -103,95 +83,69 @@ function isTableSep(line: string) {
   return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c))
 }
 
-interface BlockRange {
-  from: number
-  to: number
-  fromLine: number
-  toLine: number
-  widget: Decoration
-}
+type CodeBlock  = { type: 'code'; fromLine: number; toLine: number }
+type TableBlock = { type: 'table'; fromLine: number; toLine: number; headers: string[]; rows: string[][] }
+type Block = CodeBlock | TableBlock
 
-function findBlockRanges(doc: Text): BlockRange[] {
-  const ranges: BlockRange[] = []
+function findBlocks(doc: Text): Block[] {
+  const blocks: Block[] = []
+  const consumed = new Set<number>()
 
   // Code fences
   let fenceStart = -1
-  let fenceLang  = ''
-  let fenceLines: string[] = []
-
   for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i)
-    const m = /^(`{3,}|~{3,})(\w*)/.exec(line.text)
-    if (m) {
+    const text = doc.line(i).text
+    if (/^(`{3,}|~{3,})/.test(text)) {
       if (fenceStart === -1) {
-        fenceStart = i; fenceLang = m[2]; fenceLines = []
+        fenceStart = i
       } else {
-        ranges.push({
-          from: doc.line(fenceStart).from,
-          to: line.to,
-          fromLine: fenceStart,
-          toLine: i,
-          widget: Decoration.replace({
-            widget: new CodeBlockWidget(fenceLang, fenceLines.join('\n')),
-          }),
-        })
+        blocks.push({ type: 'code', fromLine: fenceStart, toLine: i })
+        for (let n = fenceStart; n <= i; n++) consumed.add(n)
         fenceStart = -1
       }
-    } else if (fenceStart !== -1) {
-      fenceLines.push(line.text)
     }
   }
+  // Unclosed fence → treat to end of doc
+  if (fenceStart !== -1) {
+    blocks.push({ type: 'code', fromLine: fenceStart, toLine: doc.lines })
+    for (let n = fenceStart; n <= doc.lines; n++) consumed.add(n)
+  }
 
-  // Tables (skip lines already inside code fences)
-  const fenceLines2 = new Set(ranges.flatMap((r) => {
-    const nums: number[] = []
-    for (let n = r.fromLine; n <= r.toLine; n++) nums.push(n)
-    return nums
-  }))
-
-  let tableStart = -1
-  let tableLines: string[] = []
-
-  const flushTable = (endLine: number) => {
-    if (
-      tableStart !== -1 &&
-      tableLines.length >= 2 &&
-      isTableSep(tableLines[1]) &&
-      endLine >= tableStart
-    ) {
-      ranges.push({
-        from: doc.line(tableStart).from,
-        to: doc.line(endLine).to,
-        fromLine: tableStart,
+  // Tables
+  let tStart = -1
+  let tLines: string[] = []
+  const flush = (endLine: number) => {
+    if (tStart !== -1 && tLines.length >= 2 && isTableSep(tLines[1]) && endLine >= tStart) {
+      blocks.push({
+        type: 'table',
+        fromLine: tStart,
         toLine: endLine,
-        widget: Decoration.replace({
-          widget: new TableWidget(splitRow(tableLines[0]), tableLines.slice(2).map(splitRow)),
-        }),
+        headers: splitRow(tLines[0]),
+        rows: tLines.slice(2).map(splitRow),
       })
     }
-    tableStart = -1; tableLines = []
+    tStart = -1; tLines = []
   }
-
   for (let i = 1; i <= doc.lines; i++) {
-    if (fenceLines2.has(i)) { flushTable(i - 1); continue }
-    const line = doc.line(i)
-    if (/^\|/.test(line.text)) {
-      if (tableStart === -1) tableStart = i
-      tableLines.push(line.text)
+    if (consumed.has(i)) { flush(i - 1); continue }
+    const text = doc.line(i).text
+    if (/^\|/.test(text)) {
+      if (tStart === -1) tStart = i
+      tLines.push(text)
     } else {
-      flushTable(i - 1)
+      flush(i - 1)
     }
   }
-  flushTable(doc.lines)
+  flush(doc.lines)
 
-  ranges.sort((a, b) => a.from - b.from)
-  return ranges
+  blocks.sort((a, b) => a.fromLine - b.fromLine)
+  return blocks
 }
 
 // ── Inline decorations ────────────────────────────────────────────────────────
 
-function collectInline(offset: number, text: string): Item[] {
-  const items: Item[] = []
+function collectInline(offset: number, text: string, out: Range<Decoration>[]) {
+  const items: { from: number; to: number; deco: Decoration }[] = []
 
   function push(m: RegExpExecArray, openLen: number, closeLen: number, deco: Decoration) {
     const s = offset + m.index!
@@ -227,74 +181,90 @@ function collectInline(offset: number, text: string): Item[] {
   }
 
   items.sort((a, b) => a.from - b.from || a.to - b.to)
-
-  const result: Item[] = []
   let lastTo = -Infinity
   for (const item of items) {
-    if (item.from >= lastTo) { result.push(item); lastTo = Math.max(lastTo, item.to) }
+    if (item.from >= lastTo) {
+      out.push(item.deco.range(item.from, item.to))
+      lastTo = Math.max(lastTo, item.to)
+    }
   }
-  return result
 }
 
 // ── Decoration builder ────────────────────────────────────────────────────────
 
 function buildDecorations(state: EditorState): DecorationSet {
-  const doc         = state.doc
-  const sel         = state.selection.main
-  const curFrom     = doc.lineAt(sel.from).number
-  const curTo       = doc.lineAt(sel.to).number
-  const blockRanges = findBlockRanges(doc)
-  const allItems: Item[] = []
+  const doc     = state.doc
+  const sel     = state.selection.main
+  const curFrom = doc.lineAt(sel.from).number
+  const curTo   = doc.lineAt(sel.to).number
+  const blocks  = findBlocks(doc)
+  const ranges: Range<Decoration>[] = []
 
-  // Block widgets for inactive blocks
-  for (const block of blockRanges) {
+  const blockLineType = new Map<number, 'code' | 'table'>()
+  for (const b of blocks) {
+    for (let n = b.fromLine; n <= b.toLine; n++) blockLineType.set(n, b.type)
+  }
+
+  for (const block of blocks) {
     const active = block.fromLine <= curTo && block.toLine >= curFrom
-    if (!active) {
-      allItems.push({ from: block.from, to: block.to, deco: block.widget })
+
+    if (block.type === 'code') {
+      // Code stays editable text; we only style it like a block and hide
+      // the ``` fences when the cursor is outside.
+      for (let n = block.fromLine; n <= block.toLine; n++) {
+        const line   = doc.line(n)
+        const isFence = n === block.fromLine || n === block.toLine
+        let lineDeco = lnCode
+        if (n === block.fromLine) lineDeco = lnCodeFirst
+        else if (n === block.toLine) lineDeco = lnCodeLast
+
+        if (isFence && !active) {
+          // Hide the fence text (keep the line as a thin styled strip)
+          ranges.push(lnCodeFence.range(line.from))
+          if (line.to > line.from) ranges.push(mkHidden.range(line.from, line.to))
+        } else {
+          ranges.push(lineDeco.range(line.from))
+        }
+      }
+    } else {
+      // Table: rendered widget when inactive, raw pipes when active
+      if (!active) {
+        const from = doc.line(block.fromLine).from
+        const to   = doc.line(block.toLine).to
+        ranges.push(
+          Decoration.replace({
+            widget: new TableWidget(block.headers, block.rows),
+            block: true,
+          }).range(from, to),
+        )
+      }
     }
   }
 
-  // Inline / heading decorations (scan all lines)
+  // Inline / heading decorations for lines not inside a block
   for (let i = 1; i <= doc.lines; i++) {
-    const line    = doc.line(i)
-    const lineNum = line.number
-    const isActive = lineNum >= curFrom && lineNum <= curTo
+    if (blockLineType.has(i)) continue
 
-    const blocked = blockRanges.some(
-      (b) =>
-        b.fromLine <= lineNum &&
-        b.toLine >= lineNum &&
-        !(b.fromLine <= curTo && b.toLine >= curFrom),
-    )
-    if (blocked) continue
-
+    const line     = doc.line(i)
+    const isActive = i >= curFrom && i <= curTo
     const { text, from: lFrom, to: lTo } = line
     const hm = /^(#{1,6}) /.exec(text)
 
     if (hm) {
       const level     = hm[1].length
       const prefixEnd = lFrom + hm[0].length
-      const chunk: Item[] = []
-
-      if (!isActive)            chunk.push({ from: lFrom, to: prefixEnd, deco: mkHidden })
-      if (prefixEnd <= lTo)     chunk.push({ from: prefixEnd, to: lTo, deco: mkHeadings[level - 1] })
-      if (!isActive && prefixEnd < lTo) chunk.push(...collectInline(prefixEnd, text.slice(hm[0].length)))
-
-      chunk.sort((a, b) => a.from - b.from || a.to - b.to)
-      allItems.push(...chunk)
+      if (!isActive)        ranges.push(mkHidden.range(lFrom, prefixEnd))
+      if (prefixEnd <= lTo) ranges.push(mkHeadings[level - 1].range(prefixEnd, lTo))
+      if (!isActive && prefixEnd < lTo) collectInline(prefixEnd, text.slice(hm[0].length), ranges)
     } else if (!isActive) {
-      allItems.push(...collectInline(lFrom, text))
+      collectInline(lFrom, text, ranges)
     }
   }
 
-  allItems.sort((a, b) => a.from - b.from || a.to - b.to)
-
-  const builder = new RangeSetBuilder<Decoration>()
-  for (const { from, to, deco } of allItems) builder.add(from, to, deco)
-  return builder.finish()
+  return Decoration.set(ranges, true)
 }
 
-// ── StateField (allows Decoration.replace across line breaks) ─────────────────
+// ── StateField ────────────────────────────────────────────────────────────────
 
 const livePreviewField = StateField.define<DecorationSet>({
   create: (state) => buildDecorations(state),
@@ -312,15 +282,12 @@ export function createLivePreviewExtensions(onNavigate: (target: string) => void
     mousedown(event, view) {
       const target = event.target as HTMLElement
 
-      // Click anywhere on a block widget → position cursor at the top of the
-      // widget (= start of the fence / table), so the widget disappears and
-      // the raw markdown becomes editable.
-      const blockWidget = target.closest<HTMLElement>(
-        '.cm-preview-codeblock, .cm-preview-table',
-      )
-      if (blockWidget) {
+      // Click on a rendered table → move cursor to its top so the raw
+      // markdown is revealed for editing.
+      const tableEl = target.closest<HTMLElement>('.cm-preview-table')
+      if (tableEl) {
         event.preventDefault()
-        const rect = blockWidget.getBoundingClientRect()
+        const rect = tableEl.getBoundingClientRect()
         const pos  = view.posAtCoords({ x: rect.left + 4, y: rect.top + 2 })
         if (pos !== null) {
           view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
