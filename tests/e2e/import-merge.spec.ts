@@ -4,12 +4,12 @@ import type { Page } from '@playwright/test'
 const testVault = {
   name: 'Import Merge Test Vault',
   importedAt: '2026-06-18T00:00:00.000Z',
-  folders: [],
+  folders: ['Imported'],
   notes: [
     {
-      id: 'existing.md',
+      id: 'imported/existing.md',
       title: 'Existing',
-      path: 'Existing.md',
+      path: 'Imported/Existing.md',
       updatedAt: '2026-06-18T00:00:00.000Z',
       content: '# Original',
       links: [],
@@ -47,6 +47,7 @@ test('importing a folder merges notes without overwriting existing paths', async
   })
 
   await expect(page.locator('.note-row-wrap')).toHaveCount(2)
+  await expect(page.locator('.folder-row', { hasText: 'Imported' })).toBeVisible()
 
   const savedVault = await page.evaluate(() =>
     JSON.parse(window.localStorage.getItem('web-obsidian:vault') || '{}'),
@@ -55,11 +56,11 @@ test('importing a folder merges notes without overwriting existing paths', async
   expect(savedVault.notes).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        path: 'Existing.md',
+        path: 'Imported/Existing.md',
         content: '# Original',
       }),
       expect.objectContaining({
-        path: 'Existing 2.md',
+        path: 'Imported/Existing 2.md',
         content: '# Imported',
       }),
     ]),

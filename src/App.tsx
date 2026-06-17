@@ -481,7 +481,7 @@ function App() {
     const vaultName = guessVaultName(markdownFiles[0])
     const notes = await Promise.all(
       markdownFiles.map(async (file) => {
-        const path = stripVaultRoot(getRelativePath(file), vaultName)
+        const path = getRelativePath(file)
         const content = await file.text()
         const title = path.split('/').pop()?.replace(/\.md$/i, '') || file.name
         return {
@@ -1419,11 +1419,6 @@ function guessVaultName(file?: File) {
   if (!file) return ''
   const path = getRelativePath(file)
   return path.includes('/') ? path.split('/')[0] : ''
-}
-
-function stripVaultRoot(path: string, vaultName: string) {
-  if (!vaultName) return path
-  return path.startsWith(`${vaultName}/`) ? path.slice(vaultName.length + 1) : path
 }
 
 function getParentFolder(path: string) {
