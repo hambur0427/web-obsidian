@@ -268,6 +268,23 @@ button {
   padding-left: calc(10px + var(--tree-level, 0) * 16px);
 }
 
+.note-row.editing {
+  cursor: text;
+}
+
+.note-row input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 6px;
+  outline: 0;
+}
+
 .note-row-wrap.active {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -500,18 +517,51 @@ button {
   background: var(--bg);
 }
 
-.note-header p {
+.note-header p,
+.path-edit-button {
   color: var(--muted);
   font-size: 13px;
   margin: 0 0 6px;
   overflow-wrap: anywhere;
 }
 
-.note-header h1 {
+.path-edit-button,
+.title-edit-button {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+
+.path-edit-button:hover,
+.title-edit-button:hover {
+  color: var(--accent);
+}
+
+.title-edit-button {
   margin: 0;
   color: var(--text-h);
   font-size: 30px;
+  font-weight: 700;
   line-height: 1.15;
+}
+
+.title-rename-input {
+  width: min(620px, 100%);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--editor);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
+  padding: 4px 8px;
+  outline: 0;
 }
 
 .note-header span {

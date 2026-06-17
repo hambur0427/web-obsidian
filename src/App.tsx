@@ -127,6 +127,8 @@ function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [trashExpanded, setTrashExpanded] = useState(false)
   const [dragState, setDragState] = useState<DragState | null>(null)
+  const [renamingNoteId, setRenamingNoteId] = useState('')
+  const [renameDraft, setRenameDraft] = useState('')
   const lastSavedCloudSignatureRef = useRef('')
 
   useEffect(() => {
@@ -391,18 +393,42 @@ function App() {
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Folder created locally')
   }
 
-  function renameNote(noteId: string) {
+  function startRenameNote(noteId: string) {
     const note = vault.notes.find((item) => item.id === noteId)
     if (!note) return
 
     const currentName = note.path.split('/').pop()?.replace(/\.md$/i, '') || note.title
-    const nextName = normalizeMarkdownFileName(window.prompt('Rename Markdown file', currentName) ?? '')
+    setRenamingNoteId(noteId)
+    setRenameDraft(currentName)
+  }
 
-    if (!nextName) return
+  function cancelRenameNote() {
+    setRenamingNoteId('')
+    setRenameDraft('')
+  }
+
+  function commitRenameNote() {
+    const noteId = renamingNoteId
+    const note = vault.notes.find((item) => item.id === noteId)
+    if (!note) {
+      cancelRenameNote()
+      return
+    }
+
+    const nextName = normalizeMarkdownFileName(renameDraft)
+
+    if (!nextName) {
+      cancelRenameNote()
+      return
+    }
 
     const folderPath = getParentFolder(note.path)
     const nextPath = folderPath ? `${folderPath}/${nextName}.md` : `${nextName}.md`
     const nextId = nextPath.toLowerCase()
+
+    cancelRenameNote()
+
+    if (nextPath.toLowerCase() === note.path.toLowerCase()) return
 
     if (
       vault.notes.some(
@@ -782,12 +808,17 @@ function App() {
               onSelectNote: setActiveId,
               onToggleFolder: toggleFolder,
               onTrashNote: moveNoteToTrash,
-              onRenameNote: renameNote,
+              onRenameNote: startRenameNote,
               onContextMenu: openContextMenu,
               onDragStart: setDragState,
               onDragOver: handleDragOver,
               onDrop: handleDrop,
               onDragEnd: () => setDragState(null),
+              renamingNoteId,
+              renameDraft,
+              onRenameDraftChange: setRenameDraft,
+              onCommitRename: commitRenameNote,
+              onCancelRename: cancelRenameNote,
             }),
           )}
           {noteTree.notes.map((note) =>
@@ -796,10 +827,15 @@ function App() {
               level: 0,
               onSelectNote: setActiveId,
               onTrashNote: moveNoteToTrash,
-              onRenameNote: renameNote,
+              onRenameNote: startRenameNote,
               onContextMenu: openContextMenu,
               onDragStart: setDragState,
               onDragEnd: () => setDragState(null),
+              renamingNoteId,
+              renameDraft,
+              onRenameDraftChange: setRenameDraft,
+              onCommitRename: commitRenameNote,
+              onCancelRename: cancelRenameNote,
             }),
           )}
         </nav>
@@ -875,7 +911,7 @@ function App() {
               <hr />
               <button
                 type="button"
-                onClick={() => runContextAction(() => renameNote(contextMenu.noteId ?? ''))}
+                onClick={() => runContextAction(() => startRenameNote(contextMenu.noteId ?? ''))}
               >
                 <Pencil size={15} aria-hidden="true" />
                 Rename
@@ -898,8 +934,41 @@ function App() {
           <>
             <header className="note-header">
               <div>
-                <p>{activeNote.path}</p>
-                <h1>{activeNote.title}</h1>
+                {renamingNoteId === activeNote.id ? (
+                  <>
+                    <p>{getParentFolder(activeNote.path) || 'Root'}</p>
+                    <input
+                      className="title-rename-input"
+                      value={renameDraft}
+                      autoFocus
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onBlur={commitRenameNote}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') commitRenameNote()
+                        if (event.key === 'Escape') cancelRenameNote()
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="path-edit-button"
+                      onClick={() => startRenameNote(activeNote.id)}
+                      title="Rename Markdown file"
+                    >
+                      {activeNote.path}
+                    </button>
+                    <button
+                      type="button"
+                      className="title-edit-button"
+                      onClick={() => startRenameNote(activeNote.id)}
+                      title="Rename Markdown file"
+                    >
+                      {activeNote.title}
+                    </button>
+                  </>
+                )}
               </div>
               <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
             </header>
@@ -1240,6 +1309,11 @@ function renderFolderNode(
     onDragOver: (event: ReactDragEvent<HTMLElement>) => void
     onDrop: (event: ReactDragEvent<HTMLElement>, targetFolderPath?: string) => void
     onDragEnd: () => void
+    renamingNoteId: string
+    renameDraft: string
+    onRenameDraftChange: (value: string) => void
+    onCommitRename: () => void
+    onCancelRename: () => void
   },
 ) {
   const isExpanded = options.expandedFolders.has(folder.path)
@@ -1293,6 +1367,11 @@ function renderFolderNode(
               onContextMenu: options.onContextMenu,
               onDragStart: options.onDragStart,
               onDragEnd: options.onDragEnd,
+              renamingNoteId: options.renamingNoteId,
+              renameDraft: options.renameDraft,
+              onRenameDraftChange: options.onRenameDraftChange,
+              onCommitRename: options.onCommitRename,
+              onCancelRename: options.onCancelRename,
             }),
           )}
         </div>
@@ -1312,9 +1391,15 @@ function renderNoteNode(
     onContextMenu: (event: ReactMouseEvent<HTMLElement>, folderPath?: string, noteId?: string) => void
     onDragStart: (state: DragState) => void
     onDragEnd: () => void
+    renamingNoteId: string
+    renameDraft: string
+    onRenameDraftChange: (value: string) => void
+    onCommitRename: () => void
+    onCancelRename: () => void
   },
 ) {
   const parentPath = getParentFolder(note.path)
+  const isRenaming = options.renamingNoteId === note.id
 
   return (
     <div
@@ -1329,13 +1414,29 @@ function renderNoteNode(
       }}
       onDragEnd={options.onDragEnd}
     >
-      <button type="button" className="note-row" onClick={() => options.onSelectNote(note.id)}>
-        <FileText size={16} aria-hidden="true" />
-        <span>
-          <strong>{note.title}</strong>
-          <small>{note.path}</small>
-        </span>
-      </button>
+      {isRenaming ? (
+        <div className="note-row editing">
+          <FileText size={16} aria-hidden="true" />
+          <input
+            value={options.renameDraft}
+            autoFocus
+            onChange={(event) => options.onRenameDraftChange(event.target.value)}
+            onBlur={options.onCommitRename}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') options.onCommitRename()
+              if (event.key === 'Escape') options.onCancelRename()
+            }}
+          />
+        </div>
+      ) : (
+        <button type="button" className="note-row" onClick={() => options.onSelectNote(note.id)}>
+          <FileText size={16} aria-hidden="true" />
+          <span>
+            <strong>{note.title}</strong>
+            <small>{note.path}</small>
+          </span>
+        </button>
+      )}
       <button
         type="button"
         className="note-action-button"
