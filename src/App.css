@@ -834,6 +834,78 @@ button {
   font-size: 16px;
 }
 
+.live-table-editor {
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--editor);
+}
+
+.live-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.live-table-toolbar button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.live-table-toolbar button:hover {
+  border-color: var(--accent);
+  background: var(--control-hover);
+}
+
+.live-table-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.live-table-scroll {
+  overflow: auto;
+}
+
+.live-table-editor table,
+.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 16px;
+}
+
+.live-table-editor th,
+.live-table-editor td,
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  vertical-align: top;
+}
+
+.live-table-editor th,
+.markdown-preview th {
+  background: var(--control-hover);
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.live-table-editor input {
+  width: 100%;
+  min-width: 120px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-h);
+  font: inherit;
+}
+
 .empty-state {
   display: grid;
   place-items: center;

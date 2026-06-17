@@ -84,6 +84,11 @@ type EditingBlock = {
   index: number
 }
 
+type MarkdownTable = {
+  headers: string[]
+  rows: string[][]
+}
+
 type ContextMenuState = {
   x: number
   y: number
@@ -1986,6 +1991,7 @@ function renderLiveMarkdownBlock(options: {
     options.editingBlock?.noteId === options.activeNoteId &&
     options.editingBlock.index === options.index
   const heading = parseMarkdownHeading(options.block.content)
+  const table = parseMarkdownTable(options.block.content)
   const isCodeFence = isFencedCodeBlock(options.block.content)
 
   if (isEditing && heading) {
@@ -2007,6 +2013,17 @@ function renderLiveMarkdownBlock(options: {
             options.onExitEdit()
           }
         }}
+      />
+    )
+  }
+
+  if (isEditing && table) {
+    return (
+      <MarkdownTableEditor
+        key={options.block.id}
+        table={table}
+        onExitEdit={options.onExitEdit}
+        onUpdate={(nextTable) => options.onUpdate(options.block, serializeMarkdownTable(nextTable))}
       />
     )
   }
@@ -2054,6 +2071,116 @@ function renderLiveMarkdownBlock(options: {
   )
 }
 
+function MarkdownTableEditor(options: {
+  table: MarkdownTable
+  onUpdate: (table: MarkdownTable) => void
+  onExitEdit: () => void
+}) {
+  function updateHeader(columnIndex: number, value: string) {
+    options.onUpdate({
+      ...options.table,
+      headers: options.table.headers.map((header, index) =>
+        index === columnIndex ? value : header,
+      ),
+    })
+  }
+
+  function updateCell(rowIndex: number, columnIndex: number, value: string) {
+    options.onUpdate({
+      ...options.table,
+      rows: options.table.rows.map((row, index) =>
+        index === rowIndex
+          ? row.map((cell, cellIndex) => (cellIndex === columnIndex ? value : cell))
+          : row,
+      ),
+    })
+  }
+
+  function addColumn() {
+    options.onUpdate({
+      headers: [...options.table.headers, 'Column'],
+      rows: options.table.rows.map((row) => [...row, '']),
+    })
+  }
+
+  function removeColumn() {
+    if (options.table.headers.length <= 1) return
+
+    options.onUpdate({
+      headers: options.table.headers.slice(0, -1),
+      rows: options.table.rows.map((row) => row.slice(0, -1)),
+    })
+  }
+
+  function addRow() {
+    options.onUpdate({
+      ...options.table,
+      rows: [...options.table.rows, options.table.headers.map(() => '')],
+    })
+  }
+
+  function removeRow() {
+    if (!options.table.rows.length) return
+
+    options.onUpdate({
+      ...options.table,
+      rows: options.table.rows.slice(0, -1),
+    })
+  }
+
+  return (
+    <div className="live-table-editor">
+      <div className="live-table-toolbar">
+        <button type="button" onClick={addColumn}>
+          + Column
+        </button>
+        <button type="button" onClick={removeColumn} disabled={options.table.headers.length <= 1}>
+          - Column
+        </button>
+        <button type="button" onClick={addRow}>
+          + Row
+        </button>
+        <button type="button" onClick={removeRow} disabled={!options.table.rows.length}>
+          - Row
+        </button>
+        <button type="button" onClick={options.onExitEdit}>
+          Done
+        </button>
+      </div>
+      <div className="live-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              {options.table.headers.map((header, index) => (
+                <th key={`head-${index}`}>
+                  <input
+                    value={header}
+                    onChange={(event) => updateHeader(index, event.target.value)}
+                  />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {options.table.rows.map((row, rowIndex) => (
+              <tr key={`row-${rowIndex}`}>
+                {options.table.headers.map((_, columnIndex) => (
+                  <td key={`cell-${rowIndex}-${columnIndex}`}>
+                    <input
+                      value={row[columnIndex] ?? ''}
+                      onChange={(event) => updateCell(rowIndex, columnIndex, event.target.value)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function parseMarkdownHeading(content: string) {
   const match = /^(#{1,6})\s+(.+?)\s*$/.exec(content)
   if (!match) return null
@@ -2066,6 +2193,62 @@ function parseMarkdownHeading(content: string) {
 
 function isFencedCodeBlock(content: string) {
   return content.trimStart().startsWith('```')
+}
+
+function parseMarkdownTable(content: string): MarkdownTable | null {
+  const lines = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (lines.length < 2) return null
+  if (!isMarkdownTableSeparator(lines[1])) return null
+
+  const headers = splitTableRow(lines[0])
+  if (!headers.length) return null
+
+  const rows = lines.slice(2).map((line) => normalizeTableRow(splitTableRow(line), headers.length))
+
+  return {
+    headers,
+    rows,
+  }
+}
+
+function serializeMarkdownTable(table: MarkdownTable) {
+  const headers = table.headers.map(normalizeTableCell)
+  const separator = headers.map(() => '---')
+  const rows = table.rows.map((row) =>
+    normalizeTableRow(row, headers.length).map(normalizeTableCell),
+  )
+
+  return [
+    serializeTableRow(headers),
+    serializeTableRow(separator),
+    ...rows.map(serializeTableRow),
+  ].join('\n')
+}
+
+function isMarkdownTableSeparator(line: string) {
+  const cells = splitTableRow(line)
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()))
+}
+
+function splitTableRow(line: string) {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return trimmed.split('|').map((cell) => cell.trim())
+}
+
+function normalizeTableRow(row: string[], columnCount: number) {
+  return Array.from({ length: columnCount }, (_, index) => row[index] ?? '')
+}
+
+function normalizeTableCell(cell: string) {
+  return cell.replace(/\|/g, '\\|').trim()
+}
+
+function serializeTableRow(cells: string[]) {
+  return `| ${cells.join(' | ')} |`
 }
 
 function getTreeRowStyle(level: number) {
