@@ -19,7 +19,8 @@ Cloud-ready Obsidian-style vault prototype built with Vite, React, TypeScript, a
 - Move notes to Trash before permanent deletion.
 - Keep trashed notes for 7 days unless they are force deleted.
 - Store a local working copy in browser `localStorage`.
-- Save and load the current vault from Vercel Blob.
+- Automatically load the current vault from Vercel Blob.
+- Automatically save vault changes to Vercel Blob after edits.
 - Provide a Vercel API surface under `/api`.
 
 ## Architecture
@@ -100,9 +101,10 @@ vercel dev
 Use the app:
 
 1. Import an Obsidian folder.
-2. Click Save cloud.
-3. Refresh or open another browser.
-4. Click Load cloud.
+2. Edit notes, rename files, create folders, or move notes to Trash.
+3. The app autosaves changes to Vercel Blob after a short delay.
+4. Refresh or open another browser.
+5. The app automatically loads the saved cloud vault on startup.
 
 ## Current API Routes
 

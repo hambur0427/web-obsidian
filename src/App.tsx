@@ -6,7 +6,6 @@ import {
   Cloud,
   ChevronDown,
   ChevronRight,
-  DownloadCloud,
   FileDown,
   FileText,
   Folder,
@@ -101,6 +100,9 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(['Projects']))
   const [previewWidth, setPreviewWidth] = useState(380)
+  const [cloudReady, setCloudReady] = useState(false)
+  const [cloudInitialized, setCloudInitialized] = useState(false)
+  const lastSavedCloudSignatureRef = useRef('')
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pruneExpiredTrash(vault)))
@@ -109,17 +111,94 @@ function App() {
   useEffect(() => {
     const controller = new AbortController()
 
-    fetch(API_HEALTH_ENDPOINT, { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data: { storage?: string }) => {
-        setCloudStatus(data.storage === 'blob-configured' ? 'Vercel Blob ready' : 'Cloud API ready')
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setCloudStatus('Local mode')
-      })
+    async function initializeCloud() {
+      try {
+        const healthResponse = await fetch(API_HEALTH_ENDPOINT, { signal: controller.signal })
+        const health = (await healthResponse.json()) as { storage?: string }
+
+        if (!healthResponse.ok || health.storage !== 'blob-configured') {
+          setCloudReady(false)
+          setCloudStatus('Local mode')
+          setCloudInitialized(true)
+          return
+        }
+
+        setCloudReady(true)
+        setCloudStatus('Loading cloud vault')
+
+        const vaultResponse = await fetch(API_VAULT_ENDPOINT, { signal: controller.signal })
+
+        if (vaultResponse.status === 404) {
+          lastSavedCloudSignatureRef.current = ''
+          setCloudStatus('Autosave ready')
+          setCloudInitialized(true)
+          return
+        }
+
+        const data = (await vaultResponse.json()) as CloudVaultResponse
+
+        if (!vaultResponse.ok || !data.vault) {
+          throw new Error(data.error || 'Cloud load failed')
+        }
+
+        const nextVault = pruneExpiredTrash(data.vault)
+        const nextActiveNotes = getActiveNotes(nextVault.notes)
+        setVault(nextVault)
+        setActiveId(nextActiveNotes[0]?.id ?? '')
+        setExpandedFolders(collectFolderPaths(buildNoteTree(nextActiveNotes, nextVault.folders)))
+        lastSavedCloudSignatureRef.current = JSON.stringify(nextVault)
+        setCloudStatus('Loaded. Autosave ready')
+        setCloudInitialized(true)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setCloudReady(false)
+        setCloudStatus(error instanceof Error ? error.message : 'Cloud unavailable')
+        setCloudInitialized(true)
+      }
+    }
+
+    initializeCloud()
 
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    if (!cloudReady || !cloudInitialized) return
+
+    const nextVault = pruneExpiredTrash(vault)
+    const nextSignature = JSON.stringify(nextVault)
+    if (nextSignature === lastSavedCloudSignatureRef.current) return
+
+    setCloudStatus('Autosave pending')
+    const timeoutId = window.setTimeout(async () => {
+      setIsSyncing(true)
+      setCloudStatus('Saving to cloud')
+
+      try {
+        const response = await fetch(API_VAULT_ENDPOINT, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: nextSignature,
+        })
+        const data = (await response.json()) as CloudVaultResponse
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Autosave failed')
+        }
+
+        lastSavedCloudSignatureRef.current = nextSignature
+        setCloudStatus('Autosaved')
+      } catch (error) {
+        setCloudStatus(error instanceof Error ? error.message : 'Autosave failed')
+      } finally {
+        setIsSyncing(false)
+      }
+    }, 1000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [cloudInitialized, cloudReady, vault])
 
   const activeNotes = useMemo(() => getActiveNotes(vault.notes), [vault.notes])
   const trashedNotes = useMemo(() => getTrashedNotes(vault.notes), [vault.notes])
@@ -187,57 +266,6 @@ function App() {
     fileInputRef.current?.click()
   }
 
-  async function loadCloudVault() {
-    setIsSyncing(true)
-    setCloudStatus('Loading cloud vault')
-
-    try {
-      const response = await fetch(API_VAULT_ENDPOINT)
-      const data = (await response.json()) as CloudVaultResponse
-
-      if (!response.ok || !data.vault) {
-        throw new Error(data.error || 'No cloud vault found')
-      }
-
-      const nextVault = pruneExpiredTrash(data.vault)
-      const nextActiveNotes = getActiveNotes(nextVault.notes)
-      setVault(nextVault)
-      setActiveId(nextActiveNotes[0]?.id ?? '')
-      setExpandedFolders(collectFolderPaths(buildNoteTree(nextActiveNotes, nextVault.folders)))
-      setCloudStatus('Loaded from Vercel Blob')
-    } catch (error) {
-      setCloudStatus(error instanceof Error ? error.message : 'Load failed')
-    } finally {
-      setIsSyncing(false)
-    }
-  }
-
-  async function saveCloudVault() {
-    setIsSyncing(true)
-    setCloudStatus('Saving to Vercel Blob')
-
-    try {
-      const response = await fetch(API_VAULT_ENDPOINT, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(pruneExpiredTrash(vault)),
-      })
-      const data = (await response.json()) as CloudVaultResponse
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Save failed')
-      }
-
-      setCloudStatus('Saved to Vercel Blob')
-    } catch (error) {
-      setCloudStatus(error instanceof Error ? error.message : 'Save failed')
-    } finally {
-      setIsSyncing(false)
-    }
-  }
-
   async function importFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? [])
     if (!files.length) return
@@ -275,7 +303,7 @@ function App() {
     setVault(importedVault)
     setActiveId(importedVault.notes[0]?.id ?? '')
     setExpandedFolders(collectFolderPaths(buildNoteTree(importedVault.notes, importedVault.folders)))
-    setCloudStatus('Imported locally. Save cloud to persist.')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Imported locally')
     event.target.value = ''
   }
 
@@ -296,7 +324,7 @@ function App() {
       importedAt: stamp.toISOString(),
     }))
     setActiveId(note.id)
-    setCloudStatus('Unsaved local changes')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Unsaved local changes')
   }
 
   function createFolder() {
@@ -316,7 +344,7 @@ function App() {
       importedAt: new Date().toISOString(),
     }))
     expandFolderPath(path)
-    setCloudStatus('Folder created locally. Save cloud to persist.')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Folder created locally')
   }
 
   function renameNote(noteId: string) {
@@ -357,7 +385,7 @@ function App() {
     }))
 
     if (activeId === noteId) setActiveId(nextId)
-    setCloudStatus('Renamed locally. Save cloud to persist.')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Renamed locally')
   }
 
   function moveNoteToTrash(noteId: string) {
@@ -378,7 +406,7 @@ function App() {
     }))
 
     if (activeId === noteId) setActiveId(nextActiveId)
-    setCloudStatus('Moved to trash. Save cloud to persist.')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Moved to trash')
   }
 
   function restoreNote(noteId: string) {
@@ -395,7 +423,7 @@ function App() {
       ),
     }))
     setActiveId(noteId)
-    setCloudStatus('Restored locally. Save cloud to persist.')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Restored locally')
   }
 
   function forceDeleteNote(noteId: string) {
@@ -404,7 +432,7 @@ function App() {
       notes: current.notes.filter((note) => note.id !== noteId),
     }))
     if (activeId === noteId) setActiveId(activeNotes[0]?.id ?? '')
-    setCloudStatus('Permanently deleted locally. Save cloud to persist.')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Permanently deleted locally')
   }
 
   function toggleFolder(path: string) {
@@ -447,7 +475,7 @@ function App() {
           : note,
       ),
     }))
-    setCloudStatus('Unsaved local changes')
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Unsaved local changes')
   }
 
   function downloadJson() {
@@ -518,14 +546,6 @@ function App() {
             <UploadCloud size={18} aria-hidden="true" />
             Import files
           </button>
-          <button type="button" onClick={loadCloudVault} disabled={isSyncing} title="Load from Vercel Blob">
-            <DownloadCloud size={18} aria-hidden="true" />
-            Load cloud
-          </button>
-          <button type="button" onClick={saveCloudVault} disabled={isSyncing} title="Save to Vercel Blob">
-            <UploadCloud size={18} aria-hidden="true" />
-            Save cloud
-          </button>
           <button type="button" onClick={createNote} title="Create note">
             <Plus size={18} aria-hidden="true" />
             New
@@ -574,7 +594,7 @@ function App() {
         <div className="stats">
           <span>{activeNotes.length} notes</span>
           <span>{countLinks(activeNotes)} links</span>
-          <span>{cloudStatus}</span>
+          <span>{isSyncing ? 'Saving to cloud' : cloudStatus}</span>
         </div>
 
         <nav className="note-list" aria-label="Notes">
