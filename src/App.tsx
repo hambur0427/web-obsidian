@@ -59,6 +59,7 @@ type NoteTreeNode = {
 type ContextMenuState = {
   x: number
   y: number
+  type: 'root' | 'folder' | 'note'
   folderPath: string
   noteId?: string
 }
@@ -408,6 +409,7 @@ function App() {
     if (!note) return
 
     const currentName = note.path.split('/').pop()?.replace(/\.md$/i, '') || note.title
+    setActiveId(noteId)
     setRenameTarget({ type: 'note', id: noteId })
     setRenameDraft(currentName)
   }
@@ -616,6 +618,7 @@ function App() {
     setContextMenu({
       x: event.clientX,
       y: event.clientY,
+      type: noteId ? 'note' : folderPath ? 'folder' : 'root',
       folderPath,
       noteId,
     })
@@ -969,6 +972,38 @@ function App() {
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
+          {contextMenu.type === 'note' ? (
+            <>
+              <button
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const noteId = contextMenu.noteId
+                  if (noteId) {
+                    runContextAction(() => startRenameNote(noteId))
+                  }
+                }}
+              >
+                <Pencil size={15} aria-hidden="true" />
+                Rename
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  const noteId = contextMenu.noteId
+                  if (noteId) {
+                    runContextAction(() => moveNoteToTrash(noteId))
+                  }
+                }}
+              >
+                <Trash2 size={15} aria-hidden="true" />
+                Move to trash
+              </button>
+              <hr />
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => runContextAction(() => createNote(contextMenu.folderPath))}
@@ -983,7 +1018,7 @@ function App() {
             <FolderPlus size={15} aria-hidden="true" />
             New folder
           </button>
-          {contextMenu.folderPath && !contextMenu.noteId ? (
+          {contextMenu.type === 'folder' ? (
             <button
               type="button"
               onClick={() => runContextAction(() => startRenameFolder(contextMenu.folderPath))}
@@ -991,30 +1026,6 @@ function App() {
               <Pencil size={15} aria-hidden="true" />
               Rename folder
             </button>
-          ) : null}
-          {contextMenu.noteId ? (
-            <>
-              <hr />
-              <button
-                type="button"
-                onPointerDown={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  runContextAction(() => startRenameNote(contextMenu.noteId ?? ''))
-                }}
-              >
-                <Pencil size={15} aria-hidden="true" />
-                Rename
-              </button>
-              <button
-                type="button"
-                className="danger"
-                onClick={() => runContextAction(() => moveNoteToTrash(contextMenu.noteId ?? ''))}
-              >
-                <Trash2 size={15} aria-hidden="true" />
-                Move to trash
-              </button>
-            </>
           ) : null}
         </div>
       ) : null}
@@ -1599,6 +1610,7 @@ function renderNoteNode(
         onPointerDown={(event) => {
           event.preventDefault()
           event.stopPropagation()
+          options.onSelectNote(note.id)
           options.onRenameNote(note.id)
         }}
         onClick={(event) => {
