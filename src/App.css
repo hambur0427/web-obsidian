@@ -223,8 +223,8 @@ button {
 .note-row-wrap::before {
   content: '';
   position: absolute;
-  top: -6px;
-  bottom: -6px;
+  top: 0;
+  bottom: 0;
   left: var(--tree-line-left, 17px);
   width: 1px;
   background: var(--tree-line);
@@ -326,7 +326,7 @@ button {
   border: 0;
   background: transparent;
   padding: 6px 8px;
-  padding-left: var(--tree-padding-left, 10px);
+  padding-left: calc(var(--tree-padding-left, 10px) + 24px);
 }
 
 .note-row.editing {
