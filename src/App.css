@@ -208,6 +208,17 @@ button {
   gap: 4px;
 }
 
+.tree-children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--tree-line-left, 17px);
+  width: 1px;
+  background: var(--tree-line);
+  pointer-events: none;
+}
+
 .folder-row-wrap,
 .folder-row,
 .note-row-wrap {
@@ -216,20 +227,6 @@ button {
   width: 100%;
   min-height: 30px;
   border-radius: 4px;
-}
-
-.folder-row-wrap::before,
-.folder-row::before,
-.note-row-wrap::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--tree-line-left, 17px);
-  width: 1px;
-  background: var(--tree-line);
-  opacity: var(--tree-line-opacity, 0);
-  pointer-events: none;
 }
 
 .folder-row {

@@ -1507,7 +1507,7 @@ function renderFolderNode(
       </div>
 
       {isExpanded ? (
-        <div className="tree-children" style={{ '--tree-level': options.level } as CSSProperties}>
+        <div className="tree-children" style={getTreeChildrenStyle(options.level)}>
           {folder.folders.map((child) =>
             renderFolderNode(child, {
               ...options,
@@ -1651,8 +1651,12 @@ function getTreeRowStyle(level: number) {
   return {
     '--tree-level': level,
     '--tree-padding-left': `${10 + level * 16}px`,
-    '--tree-line-left': `${17 + Math.max(level - 1, 0) * 16}px`,
-    '--tree-line-opacity': level > 0 ? 1 : 0,
+  } as CSSProperties
+}
+
+function getTreeChildrenStyle(parentLevel: number) {
+  return {
+    '--tree-line-left': `${17 + parentLevel * 16}px`,
   } as CSSProperties
 }
 
