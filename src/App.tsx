@@ -997,7 +997,11 @@ function App() {
               <hr />
               <button
                 type="button"
-                onClick={() => runContextAction(() => startRenameNote(contextMenu.noteId ?? ''))}
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  runContextAction(() => startRenameNote(contextMenu.noteId ?? ''))
+                }}
               >
                 <Pencil size={15} aria-hidden="true" />
                 Rename
@@ -1545,12 +1549,6 @@ function renderNoteNode(
       key={note.id}
       style={getTreeRowStyle(options.level)}
       onContextMenu={(event) => options.onContextMenu(event, parentPath, note.id)}
-      draggable={!isRenaming}
-      onDragStart={(event) => {
-        event.stopPropagation()
-        options.onDragStart({ type: 'note', noteId: note.id })
-      }}
-      onDragEnd={options.onDragEnd}
     >
       {isRenaming ? (
         <div className="note-row editing">
@@ -1580,6 +1578,12 @@ function renderNoteNode(
           className="note-row"
           onClick={() => options.onSelectNote(note.id)}
           onDoubleClick={() => options.onRenameNote(note.id)}
+          draggable
+          onDragStart={(event) => {
+            event.stopPropagation()
+            options.onDragStart({ type: 'note', noteId: note.id })
+          }}
+          onDragEnd={options.onDragEnd}
         >
           <FileText size={16} aria-hidden="true" />
           <span>
@@ -1592,14 +1596,14 @@ function renderNoteNode(
         type="button"
         className="note-action-button"
         draggable={false}
-        onMouseDown={(event) => {
+        onPointerDown={(event) => {
           event.preventDefault()
           event.stopPropagation()
+          options.onRenameNote(note.id)
         }}
         onClick={(event) => {
           event.preventDefault()
           event.stopPropagation()
-          options.onRenameNote(note.id)
         }}
         title="Rename Markdown file"
       >
@@ -1609,7 +1613,7 @@ function renderNoteNode(
         type="button"
         className="note-action-button danger"
         draggable={false}
-        onMouseDown={(event) => {
+        onPointerDown={(event) => {
           event.preventDefault()
           event.stopPropagation()
         }}

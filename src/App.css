@@ -296,12 +296,12 @@ button {
 }
 
 .folder-row[draggable='true'],
-.note-row-wrap[draggable='true'] {
+.note-row[draggable='true'] {
   cursor: grab;
 }
 
 .folder-row[draggable='true']:active,
-.note-row-wrap[draggable='true']:active {
+.note-row[draggable='true']:active {
   cursor: grabbing;
 }
 
