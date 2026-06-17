@@ -407,15 +407,14 @@ function App() {
     setRenameDraft('')
   }
 
-  function commitRenameNote() {
-    const noteId = renamingNoteId
+  function commitRenameNote(nextDraft = renameDraft, noteId = renamingNoteId) {
     const note = vault.notes.find((item) => item.id === noteId)
     if (!note) {
       cancelRenameNote()
       return
     }
 
-    const nextName = normalizeMarkdownFileName(renameDraft)
+    const nextName = normalizeMarkdownFileName(nextDraft)
 
     if (!nextName) {
       cancelRenameNote()
@@ -942,10 +941,16 @@ function App() {
                       value={renameDraft}
                       autoFocus
                       onChange={(event) => setRenameDraft(event.target.value)}
-                      onBlur={commitRenameNote}
+                      onBlur={(event) => commitRenameNote(event.currentTarget.value)}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter') commitRenameNote()
-                        if (event.key === 'Escape') cancelRenameNote()
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          commitRenameNote(event.currentTarget.value)
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          cancelRenameNote()
+                        }
                       }}
                     />
                   </>
@@ -1312,7 +1317,7 @@ function renderFolderNode(
     renamingNoteId: string
     renameDraft: string
     onRenameDraftChange: (value: string) => void
-    onCommitRename: () => void
+    onCommitRename: (value?: string) => void
     onCancelRename: () => void
   },
 ) {
@@ -1394,7 +1399,7 @@ function renderNoteNode(
     renamingNoteId: string
     renameDraft: string
     onRenameDraftChange: (value: string) => void
-    onCommitRename: () => void
+    onCommitRename: (value?: string) => void
     onCancelRename: () => void
   },
 ) {
@@ -1407,7 +1412,7 @@ function renderNoteNode(
       key={note.id}
       style={getTreeRowStyle(options.level)}
       onContextMenu={(event) => options.onContextMenu(event, parentPath, note.id)}
-      draggable
+      draggable={!isRenaming}
       onDragStart={(event) => {
         event.stopPropagation()
         options.onDragStart({ type: 'note', noteId: note.id })
@@ -1421,10 +1426,16 @@ function renderNoteNode(
             value={options.renameDraft}
             autoFocus
             onChange={(event) => options.onRenameDraftChange(event.target.value)}
-            onBlur={options.onCommitRename}
+            onBlur={(event) => options.onCommitRename(event.currentTarget.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') options.onCommitRename()
-              if (event.key === 'Escape') options.onCancelRename()
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                options.onCommitRename(event.currentTarget.value)
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                options.onCancelRename()
+              }
             }}
           />
         </div>
