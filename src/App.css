@@ -62,10 +62,13 @@ button {
 }
 
 .toolbar button,
+.file-actions button,
 .folder-row,
 .note-row,
 .note-action-button,
 .trash-row button,
+.trash-toggle,
+.context-menu button,
 .relation-group button {
   border: 1px solid var(--border);
   background: var(--control);
@@ -88,11 +91,14 @@ button {
 }
 
 .toolbar button:hover,
+.file-actions button:hover,
 .folder-row:hover,
 .note-row:hover,
 .note-row-wrap:hover,
 .note-action-button:hover,
 .trash-row button:hover,
+.trash-toggle:hover,
+.context-menu button:hover,
 .relation-group button:hover {
   border-color: var(--accent);
   background: var(--control-hover);
@@ -157,6 +163,23 @@ button {
   grid-column: 1 / -1;
 }
 
+.file-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 30px;
+}
+
+.file-actions button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
 .note-list {
   display: flex;
   flex-direction: column;
@@ -187,10 +210,13 @@ button {
   left: calc(17px + var(--tree-level, 0) * 16px);
   width: 1px;
   background: var(--tree-line);
+  z-index: 0;
 }
 
 .folder-row,
 .note-row-wrap {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 36px;
   border-radius: 7px;
@@ -206,6 +232,16 @@ button {
   padding-left: calc(10px + var(--tree-level, 0) * 16px);
   color: var(--text-h);
   font-size: 13px;
+}
+
+.folder-row[draggable='true'],
+.note-row-wrap[draggable='true'] {
+  cursor: grab;
+}
+
+.folder-row[draggable='true']:active,
+.note-row-wrap[draggable='true']:active {
+  cursor: grabbing;
 }
 
 .note-row-wrap {
@@ -267,7 +303,7 @@ button {
 
 .folder-row svg,
 .note-row svg,
-.trash-panel svg {
+.trash-section svg {
   margin-top: 2px;
   color: var(--accent);
 }
@@ -298,7 +334,7 @@ button {
   margin-top: 2px;
 }
 
-.trash-panel {
+.trash-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -306,18 +342,26 @@ button {
   border-top: 1px solid var(--border);
 }
 
-.trash-panel h2 {
+.trash-toggle {
+  min-height: 34px;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  margin: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  text-align: left;
   color: var(--text-h);
   font-size: 13px;
-  font-weight: 700;
 }
 
-.trash-panel h2 span {
+.trash-toggle strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-toggle span {
   min-width: 22px;
   min-height: 22px;
   display: inline-grid;
@@ -328,7 +372,7 @@ button {
   font-size: 11px;
 }
 
-.trash-panel p {
+.trash-section p {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
@@ -387,6 +431,42 @@ button {
   color: var(--muted);
   font-size: 11px;
   margin-top: 1px;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16);
+}
+
+.context-menu button {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 5px;
+  text-align: left;
+  background: transparent;
+}
+
+.context-menu button.danger {
+  color: var(--danger);
+}
+
+.context-menu hr {
+  height: 1px;
+  margin: 6px;
+  border: 0;
+  background: var(--border);
 }
 
 .editor-pane {

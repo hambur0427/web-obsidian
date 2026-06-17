@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+import type {
+  ChangeEvent,
+  CSSProperties,
+  DragEvent as ReactDragEvent,
+  MouseEvent as ReactMouseEvent,
+} from 'react'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import {
@@ -7,13 +12,13 @@ import {
   ChevronDown,
   ChevronRight,
   FileDown,
+  FilePlus,
   FileText,
   Folder,
   FolderPlus,
   FolderOpen,
   Link2,
   Pencil,
-  Plus,
   RotateCcw,
   Search,
   Trash2,
@@ -50,6 +55,23 @@ type NoteTreeNode = {
   folders: NoteTreeNode[]
   notes: Note[]
 }
+
+type ContextMenuState = {
+  x: number
+  y: number
+  folderPath: string
+  noteId?: string
+}
+
+type DragState =
+  | {
+      type: 'note'
+      noteId: string
+    }
+  | {
+      type: 'folder'
+      folderPath: string
+    }
 
 const STORAGE_KEY = 'web-obsidian:vault'
 const API_HEALTH_ENDPOINT = '/api/health'
@@ -102,11 +124,27 @@ function App() {
   const [previewWidth, setPreviewWidth] = useState(380)
   const [cloudReady, setCloudReady] = useState(false)
   const [cloudInitialized, setCloudInitialized] = useState(false)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [trashExpanded, setTrashExpanded] = useState(false)
+  const [dragState, setDragState] = useState<DragState | null>(null)
   const lastSavedCloudSignatureRef = useRef('')
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pruneExpiredTrash(vault)))
   }, [vault])
+
+  useEffect(() => {
+    function closeContextMenu() {
+      setContextMenu(null)
+    }
+
+    window.addEventListener('click', closeContextMenu)
+    window.addEventListener('keydown', closeContextMenu)
+    return () => {
+      window.removeEventListener('click', closeContextMenu)
+      window.removeEventListener('keydown', closeContextMenu)
+    }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -307,29 +345,35 @@ function App() {
     event.target.value = ''
   }
 
-  function createNote() {
+  function createNote(folderPath = '') {
     const stamp = new Date()
-    const title = `Untitled ${vault.notes.length + 1}`
+    const parentPath = normalizeFolderPath(folderPath)
+    const path = getUniqueNotePath(vault.notes, parentPath)
+    const title = path.split('/').pop()?.replace(/\.md$/i, '') || 'Untitled'
     const note: Note = {
-      id: `${title.toLowerCase().replace(/\s+/g, '-')}.md`,
+      id: path.toLowerCase(),
       title,
-      path: `${title}.md`,
+      path,
       content: `# ${title}\n\n`,
       links: [],
       updatedAt: stamp.toISOString(),
     }
     setVault((current) => ({
       ...current,
+      folders: parentPath ? sortFolderPaths([...(current.folders ?? []), parentPath]) : current.folders,
       notes: [note, ...current.notes],
       importedAt: stamp.toISOString(),
     }))
     setActiveId(note.id)
+    if (parentPath) expandFolderPath(parentPath)
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Unsaved local changes')
   }
 
-  function createFolder() {
-    const rawPath = window.prompt('Folder path', 'New Folder')
-    const path = normalizeFolderPath(rawPath ?? '')
+  function createFolder(parentPath = '') {
+    const basePath = normalizeFolderPath(parentPath)
+    const rawPath = window.prompt('Folder name', 'New Folder')
+    const normalizedInput = normalizeFolderPath(rawPath ?? '')
+    const path = basePath && !normalizedInput.includes('/') ? `${basePath}/${normalizedInput}` : normalizedInput
 
     if (!path) return
 
@@ -460,6 +504,131 @@ function App() {
     })
   }
 
+  function openContextMenu(
+    event: ReactMouseEvent<HTMLElement>,
+    folderPath = '',
+    noteId?: string,
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      folderPath,
+      noteId,
+    })
+  }
+
+  function runContextAction(action: () => void) {
+    action()
+    setContextMenu(null)
+  }
+
+  function handleDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!dragState) return
+    event.preventDefault()
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLElement>, targetFolderPath = '') {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (!dragState) return
+
+    if (dragState.type === 'note') {
+      moveNoteToFolder(dragState.noteId, targetFolderPath)
+    } else {
+      moveFolderToFolder(dragState.folderPath, targetFolderPath)
+    }
+
+    setDragState(null)
+  }
+
+  function moveNoteToFolder(noteId: string, targetFolderPath: string) {
+    const note = vault.notes.find((item) => item.id === noteId)
+    if (!note) return
+
+    const target = normalizeFolderPath(targetFolderPath)
+    const fileName = note.path.split('/').pop() || `${note.title}.md`
+    const currentParent = getParentFolder(note.path)
+    if (target === currentParent) return
+
+    const nextPath = getUniqueMovedNotePath(vault.notes, noteId, target, fileName)
+    const nextTitle = nextPath.split('/').pop()?.replace(/\.md$/i, '') || note.title
+    const nextId = nextPath.toLowerCase()
+
+    setVault((current) => ({
+      ...current,
+      folders: target ? sortFolderPaths([...(current.folders ?? []), target]) : current.folders,
+      notes: current.notes.map((item) =>
+        item.id === noteId
+          ? {
+              ...item,
+              id: nextId,
+              title: nextTitle,
+              path: nextPath,
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      ),
+    }))
+
+    if (activeId === noteId) setActiveId(nextId)
+    if (target) expandFolderPath(target)
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Moved locally')
+  }
+
+  function moveFolderToFolder(sourceFolderPath: string, targetFolderPath: string) {
+    const source = normalizeFolderPath(sourceFolderPath)
+    const target = normalizeFolderPath(targetFolderPath)
+
+    if (!source || source === target || target.startsWith(`${source}/`)) {
+      setCloudStatus('Cannot move folder there')
+      return
+    }
+
+    const folderName = source.split('/').pop() || source
+    const wantedPath = target ? `${target}/${folderName}` : folderName
+    const existingFolders = vault.folders ?? []
+    const nextFolderPath = getUniqueFolderPath(existingFolders, source, wantedPath)
+
+    if (nextFolderPath === source) return
+
+    let nextActiveId = activeId
+    const movedFolders = (vault.folders ?? []).map((folder) =>
+      replacePathPrefix(folder, source, nextFolderPath),
+    )
+    const nextFolders = sortFolderPaths([
+      ...movedFolders,
+      ...collectParentFolders(nextFolderPath),
+      ...(target ? collectParentFolders(target) : []),
+    ])
+    const nextNotes = vault.notes.map((note) => {
+      const nextPath = replacePathPrefix(note.path, source, nextFolderPath)
+      if (nextPath === note.path) return note
+
+      const nextNote = {
+        ...note,
+        id: nextPath.toLowerCase(),
+        path: nextPath,
+        updatedAt: new Date().toISOString(),
+      }
+
+      if (note.id === activeId) nextActiveId = nextNote.id
+      return nextNote
+    })
+
+    setVault((current) => ({
+      ...current,
+      folders: nextFolders,
+      notes: nextNotes,
+    }))
+
+    setActiveId(nextActiveId)
+    expandFolderPath(nextFolderPath)
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Moved locally')
+  }
+
   function updateActiveNote(content: string) {
     if (!activeNote) return
     setVault((current) => ({
@@ -546,14 +715,6 @@ function App() {
             <UploadCloud size={18} aria-hidden="true" />
             Import files
           </button>
-          <button type="button" onClick={createNote} title="Create note">
-            <Plus size={18} aria-hidden="true" />
-            New
-          </button>
-          <button type="button" onClick={createFolder} title="Create folder">
-            <FolderPlus size={18} aria-hidden="true" />
-            Folder
-          </button>
           <button type="button" onClick={downloadJson} title="Export JSON">
             <FileDown size={18} aria-hidden="true" />
             Export
@@ -597,7 +758,22 @@ function App() {
           <span>{isSyncing ? 'Saving to cloud' : cloudStatus}</span>
         </div>
 
-        <nav className="note-list" aria-label="Notes">
+        <div className="file-actions" aria-label="File explorer actions">
+          <button type="button" onClick={() => createNote()} title="New Markdown file">
+            <FilePlus size={16} aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => createFolder()} title="New folder">
+            <FolderPlus size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        <nav
+          className="note-list"
+          aria-label="Notes"
+          onContextMenu={(event) => openContextMenu(event)}
+          onDragOver={handleDragOver}
+          onDrop={(event) => handleDrop(event)}
+        >
           {noteTree.folders.map((folder) =>
             renderFolderNode(folder, {
               activeId: activeNote?.id ?? '',
@@ -607,6 +783,11 @@ function App() {
               onToggleFolder: toggleFolder,
               onTrashNote: moveNoteToTrash,
               onRenameNote: renameNote,
+              onContextMenu: openContextMenu,
+              onDragStart: setDragState,
+              onDragOver: handleDragOver,
+              onDrop: handleDrop,
+              onDragEnd: () => setDragState(null),
             }),
           )}
           {noteTree.notes.map((note) =>
@@ -616,17 +797,30 @@ function App() {
               onSelectNote: setActiveId,
               onTrashNote: moveNoteToTrash,
               onRenameNote: renameNote,
+              onContextMenu: openContextMenu,
+              onDragStart: setDragState,
+              onDragEnd: () => setDragState(null),
             }),
           )}
         </nav>
 
-        <section className="trash-panel" aria-label="Trash">
-          <h2>
+        <section className="trash-section" aria-label="Trash">
+          <button
+            type="button"
+            className="trash-toggle"
+            onClick={() => setTrashExpanded((current) => !current)}
+            aria-expanded={trashExpanded}
+          >
+            {trashExpanded ? (
+              <ChevronDown size={15} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={15} aria-hidden="true" />
+            )}
             <Trash2 size={15} aria-hidden="true" />
-            Trash
+            <strong>Trash</strong>
             <span>{trashedNotes.length}</span>
-          </h2>
-          {trashedNotes.length ? (
+          </button>
+          {trashExpanded && trashedNotes.length ? (
             <div className="trash-list">
               {trashedNotes.map((note) => (
                 <div className="trash-row" key={note.id}>
@@ -648,11 +842,56 @@ function App() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : null}
+          {trashExpanded && !trashedNotes.length ? (
             <p>Trash is empty</p>
-          )}
+          ) : null}
         </section>
       </aside>
+
+      {contextMenu ? (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            type="button"
+            onClick={() => runContextAction(() => createNote(contextMenu.folderPath))}
+          >
+            <FilePlus size={15} aria-hidden="true" />
+            New note
+          </button>
+          <button
+            type="button"
+            onClick={() => runContextAction(() => createFolder(contextMenu.folderPath))}
+          >
+            <FolderPlus size={15} aria-hidden="true" />
+            New folder
+          </button>
+          {contextMenu.noteId ? (
+            <>
+              <hr />
+              <button
+                type="button"
+                onClick={() => runContextAction(() => renameNote(contextMenu.noteId ?? ''))}
+              >
+                <Pencil size={15} aria-hidden="true" />
+                Rename
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => runContextAction(() => moveNoteToTrash(contextMenu.noteId ?? ''))}
+              >
+                <Trash2 size={15} aria-hidden="true" />
+                Move to trash
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="editor-pane">
         {activeNote ? (
@@ -825,6 +1064,76 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function getUniqueNotePath(notes: Note[], folderPath: string) {
+  const existingPaths = new Set(notes.map((note) => note.path.toLowerCase()))
+
+  for (let index = 1; index < 10000; index += 1) {
+    const title = index === 1 ? 'Untitled' : `Untitled ${index}`
+    const path = folderPath ? `${folderPath}/${title}.md` : `${title}.md`
+
+    if (!existingPaths.has(path.toLowerCase())) return path
+  }
+
+  return folderPath ? `${folderPath}/Untitled ${Date.now()}.md` : `Untitled ${Date.now()}.md`
+}
+
+function getUniqueMovedNotePath(
+  notes: Note[],
+  movingNoteId: string,
+  folderPath: string,
+  fileName: string,
+) {
+  const existingPaths = new Set(
+    notes
+      .filter((note) => note.id !== movingNoteId)
+      .map((note) => note.path.toLowerCase()),
+  )
+  const baseName = fileName.replace(/\.md$/i, '')
+
+  for (let index = 1; index < 10000; index += 1) {
+    const nextName = index === 1 ? baseName : `${baseName} ${index}`
+    const path = folderPath ? `${folderPath}/${nextName}.md` : `${nextName}.md`
+
+    if (!existingPaths.has(path.toLowerCase())) return path
+  }
+
+  return folderPath ? `${folderPath}/${baseName} ${Date.now()}.md` : `${baseName} ${Date.now()}.md`
+}
+
+function getUniqueFolderPath(folders: string[], movingFolderPath: string, wantedPath: string) {
+  const existingFolders = new Set(
+    folders
+      .filter(
+        (folder) =>
+          folder.toLowerCase() !== movingFolderPath.toLowerCase() &&
+          !folder.toLowerCase().startsWith(`${movingFolderPath.toLowerCase()}/`),
+      )
+      .map((folder) => folder.toLowerCase()),
+  )
+  const parent = getParentFolder(wantedPath)
+  const baseName = wantedPath.split('/').pop() || wantedPath
+
+  for (let index = 1; index < 10000; index += 1) {
+    const nextName = index === 1 ? baseName : `${baseName} ${index}`
+    const path = parent ? `${parent}/${nextName}` : nextName
+
+    if (!existingFolders.has(path.toLowerCase())) return path
+  }
+
+  return parent ? `${parent}/${baseName} ${Date.now()}` : `${baseName} ${Date.now()}`
+}
+
+function replacePathPrefix(path: string, sourcePrefix: string, nextPrefix: string) {
+  if (path === sourcePrefix) return nextPrefix
+  if (path.startsWith(`${sourcePrefix}/`)) return `${nextPrefix}${path.slice(sourcePrefix.length)}`
+  return path
+}
+
+function collectParentFolders(path: string) {
+  const parts = normalizeFolderPath(path).split('/').filter(Boolean)
+  return parts.map((_, index) => parts.slice(0, index + 1).join('/'))
+}
+
 function collectFoldersFromNotes(notes: Note[]) {
   const folders = new Set<string>()
 
@@ -926,6 +1235,11 @@ function renderFolderNode(
     onToggleFolder: (path: string) => void
     onTrashNote: (id: string) => void
     onRenameNote: (id: string) => void
+    onContextMenu: (event: ReactMouseEvent<HTMLElement>, folderPath?: string, noteId?: string) => void
+    onDragStart: (state: DragState) => void
+    onDragOver: (event: ReactDragEvent<HTMLElement>) => void
+    onDrop: (event: ReactDragEvent<HTMLElement>, targetFolderPath?: string) => void
+    onDragEnd: () => void
   },
 ) {
   const isExpanded = options.expandedFolders.has(folder.path)
@@ -937,6 +1251,15 @@ function renderFolderNode(
         className="folder-row"
         style={{ '--tree-level': options.level } as CSSProperties}
         onClick={() => options.onToggleFolder(folder.path)}
+        onContextMenu={(event) => options.onContextMenu(event, folder.path)}
+        draggable
+        onDragStart={(event) => {
+          event.stopPropagation()
+          options.onDragStart({ type: 'folder', folderPath: folder.path })
+        }}
+        onDragOver={options.onDragOver}
+        onDrop={(event) => options.onDrop(event, folder.path)}
+        onDragEnd={options.onDragEnd}
         aria-expanded={isExpanded}
       >
         {isExpanded ? (
@@ -967,6 +1290,9 @@ function renderFolderNode(
               onSelectNote: options.onSelectNote,
               onTrashNote: options.onTrashNote,
               onRenameNote: options.onRenameNote,
+              onContextMenu: options.onContextMenu,
+              onDragStart: options.onDragStart,
+              onDragEnd: options.onDragEnd,
             }),
           )}
         </div>
@@ -983,13 +1309,25 @@ function renderNoteNode(
     onSelectNote: (id: string) => void
     onTrashNote: (id: string) => void
     onRenameNote: (id: string) => void
+    onContextMenu: (event: ReactMouseEvent<HTMLElement>, folderPath?: string, noteId?: string) => void
+    onDragStart: (state: DragState) => void
+    onDragEnd: () => void
   },
 ) {
+  const parentPath = getParentFolder(note.path)
+
   return (
     <div
       className={note.id === options.activeId ? 'note-row-wrap active' : 'note-row-wrap'}
       key={note.id}
       style={{ '--tree-level': options.level } as CSSProperties}
+      onContextMenu={(event) => options.onContextMenu(event, parentPath, note.id)}
+      draggable
+      onDragStart={(event) => {
+        event.stopPropagation()
+        options.onDragStart({ type: 'note', noteId: note.id })
+      }}
+      onDragEnd={options.onDragEnd}
     >
       <button type="button" className="note-row" onClick={() => options.onSelectNote(note.id)}>
         <FileText size={16} aria-hidden="true" />

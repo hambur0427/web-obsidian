@@ -11,6 +11,9 @@ Cloud-ready Obsidian-style vault prototype built with Vite, React, TypeScript, a
 - Display imported notes as an expandable folder tree.
 - Create empty folders and keep them in the vault.
 - Rename Markdown files without leaving the current folder.
+- Create notes and folders from the file explorer toolbar or right-click menu.
+- Rename or move notes to Trash from the right-click menu.
+- Drag notes or folders to move them into another folder or back to root.
 - Show Obsidian-style hierarchy guide lines in the folder tree.
 - Edit Markdown with live preview.
 - Resize the Markdown preview pane.
