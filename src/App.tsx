@@ -13,14 +13,12 @@ import { historyKeymap } from '@codemirror/commands'
 import { EditorView, keymap } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { tags } from '@lezer/highlight'
-import DOMPurify from 'dompurify'
 import JSZip from 'jszip'
-import { marked } from 'marked'
+import { createLivePreviewExtensions } from './livePreview'
 import {
   Cloud,
   ChevronDown,
   ChevronRight,
-  Eye,
   FileDown,
   FilePlus,
   FileText,
@@ -155,11 +153,6 @@ const sampleVault: VaultState = {
   ],
 }
 
-marked.use({
-  gfm: true,
-  breaks: true,
-})
-
 function App() {
   const directoryInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -186,7 +179,6 @@ function App() {
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
-  const [isEditing, setIsEditing] = useState(false)
   const initialVaultSignatureRef = useRef(JSON.stringify(pruneExpiredTrash(vault)))
   const lastSavedCloudSignatureRef = useRef('')
 
@@ -400,14 +392,16 @@ function App() {
     )
   }, [activeNote, activeNotes])
 
-  useEffect(() => {
-    setIsEditing(false)
-  }, [activeId])
+  const notesByTitleRef = useRef(notesByTitle)
+  notesByTitleRef.current = notesByTitle
 
   const editorExtensions = useMemo(
     () => [
       ...markdownEditorExtensions,
-      keymap.of([{ key: 'Escape', run: () => { setIsEditing(false); return true } }]),
+      ...createLivePreviewExtensions((target) => {
+        const note = notesByTitleRef.current.get(normalizeTitle(target))
+        if (note) setActiveId(note.id)
+      }),
     ],
     [],
   )
@@ -958,15 +952,6 @@ function App() {
     downloadBlob(blob, `${rootName}.zip`)
   }
 
-  function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
-    const target = event.target as HTMLElement
-    const anchor = target.closest('a')
-    const href = anchor?.getAttribute('href')
-    if (!href?.startsWith('#note:')) return
-    event.preventDefault()
-    setActiveId(href.replace('#note:', ''))
-  }
-
   if (authChecking) {
     return (
       <main className="auth-shell">
@@ -1304,103 +1289,64 @@ function App() {
                   </>
                 )}
               </div>
-              <div className="note-header-right">
-                <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
-                <button
-                  type="button"
-                  className="mode-toggle"
-                  onClick={() => setIsEditing((prev) => !prev)}
-                  title={isEditing ? 'Switch to preview' : 'Switch to edit'}
-                >
-                  {isEditing ? (
-                    <Eye size={15} aria-hidden="true" />
-                  ) : (
-                    <Pencil size={15} aria-hidden="true" />
-                  )}
-                  {isEditing ? 'Preview' : 'Edit'}
-                </button>
-              </div>
+              <span>{new Date(activeNote.updatedAt).toLocaleString()}</span>
             </header>
-            {isEditing ? (
-              <CodeMirror
-                className="markdown-editor"
-                value={activeNote.content}
-                extensions={editorExtensions}
-                basicSetup={{
-                  autocompletion: true,
-                  bracketMatching: true,
-                  closeBrackets: true,
-                  defaultKeymap: true,
-                  foldGutter: false,
-                  highlightActiveLine: true,
-                  highlightActiveLineGutter: false,
-                  highlightSelectionMatches: true,
-                  lineNumbers: false,
-                  searchKeymap: true,
-                }}
-                onChange={updateActiveNote}
-                autoFocus
-              />
-            ) : (
-              <div className="live-document" aria-label="Note preview">
-                <div
-                  className="markdown-preview full-note-preview"
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    handlePreviewClick(event)
-                    const target = event.target as HTMLElement
-                    if (!target.closest('a, button')) setIsEditing(true)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    setIsEditing(true)
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: renderMarkdownContent(activeNote.content, notesByTitle),
-                  }}
-                />
-                <section className="relations">
-                  <h2>
-                    <Link2 size={18} aria-hidden="true" />
-                    Links
-                  </h2>
-                  <div className="relation-group">
-                    <strong>Outgoing</strong>
-                    {activeNote?.links.length ? (
-                      activeNote.links.map((link) => (
-                        <button
-                          type="button"
-                          key={link}
-                          onClick={() => {
-                            const note = notesByTitle.get(normalizeTitle(link))
-                            if (note) setActiveId(note.id)
-                          }}
-                          className={notesByTitle.has(normalizeTitle(link)) ? '' : 'missing'}
-                        >
-                          {link}
-                        </button>
-                      ))
-                    ) : (
-                      <span>No links</span>
-                    )}
-                  </div>
-                  <div className="relation-group">
-                    <strong>Backlinks</strong>
-                    {backlinks.length ? (
-                      backlinks.map((note) => (
-                        <button type="button" key={note.id} onClick={() => setActiveId(note.id)}>
-                          {note.title}
-                        </button>
-                      ))
-                    ) : (
-                      <span>No backlinks</span>
-                    )}
-                  </div>
-                </section>
+            <CodeMirror
+              className="markdown-editor"
+              value={activeNote.content}
+              extensions={editorExtensions}
+              basicSetup={{
+                autocompletion: true,
+                bracketMatching: true,
+                closeBrackets: true,
+                defaultKeymap: true,
+                foldGutter: false,
+                highlightActiveLine: false,
+                highlightActiveLineGutter: false,
+                highlightSelectionMatches: true,
+                lineNumbers: false,
+                searchKeymap: true,
+              }}
+              onChange={updateActiveNote}
+            />
+            <section className="relations-footer">
+              <h2>
+                <Link2 size={18} aria-hidden="true" />
+                Links
+              </h2>
+              <div className="relation-group">
+                <strong>Outgoing</strong>
+                {activeNote?.links.length ? (
+                  activeNote.links.map((link) => (
+                    <button
+                      type="button"
+                      key={link}
+                      onClick={() => {
+                        const note = notesByTitle.get(normalizeTitle(link))
+                        if (note) setActiveId(note.id)
+                      }}
+                      className={notesByTitle.has(normalizeTitle(link)) ? '' : 'missing'}
+                    >
+                      {link}
+                    </button>
+                  ))
+                ) : (
+                  <span>No links</span>
+                )}
               </div>
-            )}
+              <div className="relation-group">
+                <strong>Backlinks</strong>
+                {backlinks.length ? (
+                  backlinks.map((note) => (
+                    <button type="button" key={note.id} onClick={() => setActiveId(note.id)}>
+                      {note.title}
+                    </button>
+                  ))
+                ) : (
+                  <span>No backlinks</span>
+                )}
+              </div>
+            </section>
           </>
         ) : (
           <div className="empty-state">Import a vault or create the first note.</div>
@@ -1415,19 +1361,6 @@ function getRelativePath(file: File) {
     /\\/g,
     '/',
   )
-}
-
-function renderMarkdownContent(content: string, notesByTitle: Map<string, Note>) {
-  const linkedContent = content.replace(
-    /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g,
-    (_, target: string, alias: string) => {
-      const note = notesByTitle.get(normalizeTitle(target))
-      const label = alias || target
-      return note ? `[${label}](#note:${note.id})` : `<span class="missing-link">${label}</span>`
-    },
-  )
-
-  return DOMPurify.sanitize(marked.parse(linkedContent) as string)
 }
 
 function guessVaultName(file?: File) {

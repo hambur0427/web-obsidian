@@ -637,7 +637,7 @@ button {
 
 .editor-pane {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
   min-height: 0;
 }
 
@@ -698,40 +698,11 @@ button {
   outline: 0;
 }
 
-.note-header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 0 0 auto;
-}
-
-.note-header-right > span {
+.note-header > span {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
-}
-
-.mode-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--control);
-  color: var(--text-h);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
-}
-
-.mode-toggle:hover {
-  border-color: var(--accent);
-  background: var(--control-hover);
+  flex: 0 0 auto;
 }
 
 .markdown-editor {
@@ -745,18 +716,19 @@ button {
 .markdown-editor .cm-editor {
   height: 100%;
   background: var(--editor);
-  color: var(--text-h);
-  font: 15px/1.7 var(--mono);
+  color: var(--text);
+  font: 16px/1.8 var(--sans);
 }
 
 .markdown-editor .cm-scroller {
-  font-family: var(--mono);
+  font-family: var(--sans);
 }
 
 .markdown-editor .cm-content {
   min-height: 100%;
   box-sizing: border-box;
-  padding: 24px 26px 40px;
+  padding: 28px 32px 60px;
+  max-width: 860px;
   caret-color: var(--accent);
 }
 
@@ -764,32 +736,79 @@ button {
   outline: 0;
 }
 
-.markdown-editor .cm-activeLine {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
 .markdown-editor .cm-selectionBackground,
 .markdown-editor .cm-focused .cm-selectionBackground {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-.live-document {
-  min-height: 0;
-  overflow: auto;
-  padding: 22px 26px 42px;
-  background: var(--editor);
+/* Live preview decoration styles */
+
+.cm-md-hidden {
+  display: none;
 }
 
-.full-note-preview {
-  max-width: 920px;
-  cursor: text;
-  outline: 0;
+.cm-md-h1 {
+  font-size: 2em;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.25;
 }
 
-.full-note-preview:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
+.cm-md-h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: var(--text-h);
+  line-height: 1.3;
+}
+
+.cm-md-h3 {
+  font-size: 1.2em;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.cm-md-h4,
+.cm-md-h5,
+.cm-md-h6 {
+  font-size: 1em;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.cm-md-bold {
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.cm-md-italic {
+  font-style: italic;
+}
+
+.cm-md-code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--code-bg);
   border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.cm-md-strike {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.cm-md-wikilink {
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  cursor: pointer;
+}
+
+.relations-footer {
+  padding: 20px 32px 28px;
+  border-top: 1px solid var(--border);
+  background: var(--editor);
+  max-height: 260px;
+  overflow: auto;
 }
 
 .markdown-preview table {
@@ -892,13 +911,7 @@ button {
   border-bottom: 1px dashed var(--danger);
 }
 
-.relations {
-  margin-top: 32px;
-  padding-top: 22px;
-  border-top: 1px solid var(--border);
-}
-
-.relations h2 {
+.relations-footer h2 {
   display: flex;
   align-items: center;
   gap: 8px;
