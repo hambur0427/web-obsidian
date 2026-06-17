@@ -18,7 +18,9 @@ const mkHeadings = [1, 2, 3, 4, 5, 6].map((l) => Decoration.mark({ class: `cm-md
 // ── Block widgets ─────────────────────────────────────────────────────────────
 
 class CodeBlockWidget extends WidgetType {
-  constructor(private lang: string, private content: string) { super() }
+  private lang: string
+  private content: string
+  constructor(lang: string, content: string) { super(); this.lang = lang; this.content = content }
 
   eq(other: CodeBlockWidget) {
     return other.lang === this.lang && other.content === this.content
@@ -43,7 +45,9 @@ class CodeBlockWidget extends WidgetType {
 }
 
 class TableWidget extends WidgetType {
-  constructor(private headers: string[], private rows: string[][]) { super() }
+  private headers: string[]
+  private rows: string[][]
+  constructor(headers: string[], rows: string[][]) { super(); this.headers = headers; this.rows = rows }
 
   eq(other: TableWidget) {
     return (
