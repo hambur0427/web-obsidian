@@ -983,7 +983,7 @@ function App() {
             <FolderPlus size={15} aria-hidden="true" />
             New folder
           </button>
-          {contextMenu.folderPath ? (
+          {contextMenu.folderPath && !contextMenu.noteId ? (
             <button
               type="button"
               onClick={() => runContextAction(() => startRenameFolder(contextMenu.folderPath))}
