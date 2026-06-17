@@ -13,6 +13,7 @@ Cloud-ready Obsidian-style vault prototype built with Vite, React, TypeScript, a
 - Rename Markdown files without leaving the current folder.
 - Create notes and folders from the file explorer toolbar or right-click menu.
 - Rename Markdown files inline from the editor header or file explorer row.
+- Rename folders inline from the file explorer row or right-click menu.
 - Move notes to Trash from the right-click menu.
 - Drag notes or folders to move them into another folder or back to root.
 - Show Obsidian-style hierarchy guide lines in the folder tree.

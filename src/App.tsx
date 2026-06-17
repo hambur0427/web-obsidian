@@ -73,6 +73,16 @@ type DragState =
       folderPath: string
     }
 
+type RenameTarget =
+  | {
+      type: 'note'
+      id: string
+    }
+  | {
+      type: 'folder'
+      path: string
+    }
+
 const STORAGE_KEY = 'web-obsidian:vault'
 const API_HEALTH_ENDPOINT = '/api/health'
 const API_VAULT_ENDPOINT = '/api/vault'
@@ -127,7 +137,7 @@ function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [trashExpanded, setTrashExpanded] = useState(false)
   const [dragState, setDragState] = useState<DragState | null>(null)
-  const [renamingNoteId, setRenamingNoteId] = useState('')
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const lastSavedCloudSignatureRef = useRef('')
 
@@ -398,16 +408,36 @@ function App() {
     if (!note) return
 
     const currentName = note.path.split('/').pop()?.replace(/\.md$/i, '') || note.title
-    setRenamingNoteId(noteId)
+    setRenameTarget({ type: 'note', id: noteId })
     setRenameDraft(currentName)
   }
 
+  function startRenameFolder(folderPath: string) {
+    const path = normalizeFolderPath(folderPath)
+    if (!path) return
+
+    setRenameTarget({ type: 'folder', path })
+    setRenameDraft(path.split('/').pop() || path)
+    expandFolderPath(getParentFolder(path))
+  }
+
   function cancelRenameNote() {
-    setRenamingNoteId('')
+    setRenameTarget(null)
     setRenameDraft('')
   }
 
-  function commitRenameNote(nextDraft = renameDraft, noteId = renamingNoteId) {
+  function commitRename(nextDraft = renameDraft) {
+    if (!renameTarget) return
+
+    if (renameTarget.type === 'folder') {
+      commitRenameFolder(renameTarget.path, nextDraft)
+      return
+    }
+
+    commitRenameNote(nextDraft, renameTarget.id)
+  }
+
+  function commitRenameNote(nextDraft: string, noteId: string) {
     const note = vault.notes.find((item) => item.id === noteId)
     if (!note) {
       cancelRenameNote()
@@ -455,6 +485,53 @@ function App() {
 
     if (activeId === noteId) setActiveId(nextId)
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Renamed locally')
+  }
+
+  function commitRenameFolder(folderPath: string, nextDraft: string) {
+    const source = normalizeFolderPath(folderPath)
+    const nextName = normalizeFolderPath(nextDraft)
+
+    if (!source || !nextName || nextName.includes('/')) {
+      cancelRenameNote()
+      return
+    }
+
+    const parentPath = getParentFolder(source)
+    const wantedPath = parentPath ? `${parentPath}/${nextName}` : nextName
+    const nextFolderPath = getUniqueFolderPath(vault.folders ?? [], source, wantedPath)
+
+    cancelRenameNote()
+
+    if (source.toLowerCase() === nextFolderPath.toLowerCase()) return
+
+    let nextActiveId = activeId
+    const nextFolders = sortFolderPaths([
+      ...(vault.folders ?? []).map((folder) => replacePathPrefix(folder, source, nextFolderPath)),
+      ...collectParentFolders(nextFolderPath),
+    ])
+    const nextNotes = vault.notes.map((note) => {
+      const nextPath = replacePathPrefix(note.path, source, nextFolderPath)
+      if (nextPath === note.path) return note
+
+      const nextNote = {
+        ...note,
+        id: nextPath.toLowerCase(),
+        path: nextPath,
+        updatedAt: new Date().toISOString(),
+      }
+
+      if (note.id === activeId) nextActiveId = nextNote.id
+      return nextNote
+    })
+
+    setVault((current) => ({
+      ...current,
+      folders: nextFolders,
+      notes: nextNotes,
+    }))
+    setActiveId(nextActiveId)
+    expandFolderPath(nextFolderPath)
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Folder renamed locally')
   }
 
   function moveNoteToTrash(noteId: string) {
@@ -813,11 +890,12 @@ function App() {
               onDragOver: handleDragOver,
               onDrop: handleDrop,
               onDragEnd: () => setDragState(null),
-              renamingNoteId,
+              renameTarget,
               renameDraft,
               onRenameDraftChange: setRenameDraft,
-              onCommitRename: commitRenameNote,
+              onCommitRename: commitRename,
               onCancelRename: cancelRenameNote,
+              onRenameFolder: startRenameFolder,
             }),
           )}
           {noteTree.notes.map((note) =>
@@ -830,10 +908,10 @@ function App() {
               onContextMenu: openContextMenu,
               onDragStart: setDragState,
               onDragEnd: () => setDragState(null),
-              renamingNoteId,
+              renameTarget,
               renameDraft,
               onRenameDraftChange: setRenameDraft,
-              onCommitRename: commitRenameNote,
+              onCommitRename: commitRename,
               onCancelRename: cancelRenameNote,
             }),
           )}
@@ -905,6 +983,15 @@ function App() {
             <FolderPlus size={15} aria-hidden="true" />
             New folder
           </button>
+          {contextMenu.folderPath ? (
+            <button
+              type="button"
+              onClick={() => runContextAction(() => startRenameFolder(contextMenu.folderPath))}
+            >
+              <Pencil size={15} aria-hidden="true" />
+              Rename folder
+            </button>
+          ) : null}
           {contextMenu.noteId ? (
             <>
               <hr />
@@ -933,7 +1020,7 @@ function App() {
           <>
             <header className="note-header">
               <div>
-                {renamingNoteId === activeNote.id ? (
+                {isRenamingNote(renameTarget, activeNote.id) ? (
                   <>
                     <p>{getParentFolder(activeNote.path) || 'Root'}</p>
                     <input
@@ -941,11 +1028,11 @@ function App() {
                       value={renameDraft}
                       autoFocus
                       onChange={(event) => setRenameDraft(event.target.value)}
-                      onBlur={(event) => commitRenameNote(event.currentTarget.value)}
+                      onBlur={(event) => commitRename(event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
                           event.preventDefault()
-                          commitRenameNote(event.currentTarget.value)
+                          commitRename(event.currentTarget.value)
                         }
                         if (event.key === 'Escape') {
                           event.preventDefault()
@@ -1314,45 +1401,83 @@ function renderFolderNode(
     onDragOver: (event: ReactDragEvent<HTMLElement>) => void
     onDrop: (event: ReactDragEvent<HTMLElement>, targetFolderPath?: string) => void
     onDragEnd: () => void
-    renamingNoteId: string
+    renameTarget: RenameTarget | null
     renameDraft: string
     onRenameDraftChange: (value: string) => void
     onCommitRename: (value?: string) => void
     onCancelRename: () => void
+    onRenameFolder: (path: string) => void
   },
 ) {
   const isExpanded = options.expandedFolders.has(folder.path)
+  const isRenaming = isRenamingFolder(options.renameTarget, folder.path)
 
   return (
     <div className="tree-node" key={folder.path}>
-      <button
-        type="button"
-        className="folder-row"
-        style={getTreeRowStyle(options.level)}
-        onClick={() => options.onToggleFolder(folder.path)}
-        onContextMenu={(event) => options.onContextMenu(event, folder.path)}
-        draggable
-        onDragStart={(event) => {
-          event.stopPropagation()
-          options.onDragStart({ type: 'folder', folderPath: folder.path })
-        }}
-        onDragOver={options.onDragOver}
-        onDrop={(event) => options.onDrop(event, folder.path)}
-        onDragEnd={options.onDragEnd}
-        aria-expanded={isExpanded}
-      >
-        {isExpanded ? (
-          <ChevronDown size={15} aria-hidden="true" />
+      <div className="folder-row-wrap">
+        {isRenaming ? (
+          <div className="folder-row editing" style={getTreeRowStyle(options.level)}>
+            <FolderOpen size={16} aria-hidden="true" />
+            <input
+              value={options.renameDraft}
+              autoFocus
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+              onChange={(event) => options.onRenameDraftChange(event.target.value)}
+              onBlur={(event) => options.onCommitRename(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  options.onCommitRename(event.currentTarget.value)
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  options.onCancelRename()
+                }
+              }}
+            />
+          </div>
         ) : (
-          <ChevronRight size={15} aria-hidden="true" />
+          <button
+            type="button"
+            className="folder-row"
+            style={getTreeRowStyle(options.level)}
+            onClick={() => options.onToggleFolder(folder.path)}
+            onContextMenu={(event) => options.onContextMenu(event, folder.path)}
+            draggable
+            onDragStart={(event) => {
+              event.stopPropagation()
+              options.onDragStart({ type: 'folder', folderPath: folder.path })
+            }}
+            onDragOver={options.onDragOver}
+            onDrop={(event) => options.onDrop(event, folder.path)}
+            onDragEnd={options.onDragEnd}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? (
+              <ChevronDown size={15} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={15} aria-hidden="true" />
+            )}
+            {isExpanded ? (
+              <FolderOpen size={16} aria-hidden="true" />
+            ) : (
+              <Folder size={16} aria-hidden="true" />
+            )}
+            <span>{folder.name}</span>
+          </button>
         )}
-        {isExpanded ? (
-          <FolderOpen size={16} aria-hidden="true" />
-        ) : (
-          <Folder size={16} aria-hidden="true" />
-        )}
-        <span>{folder.name}</span>
-      </button>
+        {!isRenaming ? (
+          <button
+            type="button"
+            className="folder-action-button"
+            onClick={() => options.onRenameFolder(folder.path)}
+            title="Rename folder"
+          >
+            <Pencil size={14} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
 
       {isExpanded ? (
         <div className="tree-children" style={{ '--tree-level': options.level } as CSSProperties}>
@@ -1372,7 +1497,7 @@ function renderFolderNode(
               onContextMenu: options.onContextMenu,
               onDragStart: options.onDragStart,
               onDragEnd: options.onDragEnd,
-              renamingNoteId: options.renamingNoteId,
+              renameTarget: options.renameTarget,
               renameDraft: options.renameDraft,
               onRenameDraftChange: options.onRenameDraftChange,
               onCommitRename: options.onCommitRename,
@@ -1396,7 +1521,7 @@ function renderNoteNode(
     onContextMenu: (event: ReactMouseEvent<HTMLElement>, folderPath?: string, noteId?: string) => void
     onDragStart: (state: DragState) => void
     onDragEnd: () => void
-    renamingNoteId: string
+    renameTarget: RenameTarget | null
     renameDraft: string
     onRenameDraftChange: (value: string) => void
     onCommitRename: (value?: string) => void
@@ -1404,7 +1529,7 @@ function renderNoteNode(
   },
 ) {
   const parentPath = getParentFolder(note.path)
-  const isRenaming = options.renamingNoteId === note.id
+  const isRenaming = isRenamingNote(options.renameTarget, note.id)
 
   return (
     <div
@@ -1425,6 +1550,8 @@ function renderNoteNode(
           <input
             value={options.renameDraft}
             autoFocus
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
             onChange={(event) => options.onRenameDraftChange(event.target.value)}
             onBlur={(event) => options.onCommitRename(event.currentTarget.value)}
             onKeyDown={(event) => {
@@ -1475,6 +1602,14 @@ function getTreeRowStyle(level: number) {
     '--tree-line-left': `${17 + Math.max(level - 1, 0) * 16}px`,
     '--tree-line-opacity': level > 0 ? 1 : 0,
   } as CSSProperties
+}
+
+function isRenamingNote(target: RenameTarget | null, noteId: string) {
+  return target?.type === 'note' && target.id === noteId
+}
+
+function isRenamingFolder(target: RenameTarget | null, folderPath: string) {
+  return target?.type === 'folder' && target.path.toLowerCase() === folderPath.toLowerCase()
 }
 
 export default App

@@ -64,6 +64,7 @@ button {
 .toolbar button,
 .file-actions button,
 .folder-row,
+.folder-action-button,
 .note-row,
 .note-action-button,
 .trash-row button,
@@ -93,6 +94,7 @@ button {
 .toolbar button:hover,
 .file-actions button:hover,
 .note-action-button:hover,
+.folder-action-button:hover,
 .trash-row button:hover,
 .trash-toggle:hover,
 .context-menu button:hover,
@@ -206,6 +208,7 @@ button {
   gap: 4px;
 }
 
+.folder-row-wrap,
 .folder-row,
 .note-row-wrap {
   position: relative;
@@ -215,6 +218,7 @@ button {
   border-radius: 4px;
 }
 
+.folder-row-wrap::before,
 .folder-row::before,
 .note-row-wrap::before {
   content: '';
@@ -240,6 +244,55 @@ button {
   background: transparent;
   color: var(--text-h);
   font-size: 13px;
+}
+
+.folder-row-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: stretch;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.folder-row-wrap:hover {
+  background: var(--control-hover);
+}
+
+.folder-row.editing {
+  grid-template-columns: 18px minmax(0, 1fr);
+  cursor: text;
+}
+
+.folder-row input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+  outline: 0;
+}
+
+.folder-action-button {
+  width: 29px;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid transparent;
+  border-radius: 0 4px 4px 0;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.folder-row-wrap:hover .folder-action-button,
+.folder-row-wrap:focus-within .folder-action-button {
+  opacity: 1;
 }
 
 .folder-row[draggable='true'],
