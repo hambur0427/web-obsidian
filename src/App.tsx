@@ -14,6 +14,7 @@ import { EditorView, keymap } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { tags } from '@lezer/highlight'
 import DOMPurify from 'dompurify'
+import JSZip from 'jszip'
 import { marked } from 'marked'
 import {
   Cloud,
@@ -958,16 +959,26 @@ function App() {
     updateActiveNote(nextLines.join('\n'))
   }
 
-  function downloadJson() {
-    const blob = new Blob([JSON.stringify(vault, null, 2)], {
-      type: 'application/json',
+  async function downloadVaultZip() {
+    const zip = new JSZip()
+    const activeVaultNotes = getActiveNotes(vault.notes)
+    const rootName = sanitizeExportName(vault.name || 'Cloud Vault')
+    const rootFolder = zip.folder(rootName) ?? zip
+    const exportedPaths = new Set<string>()
+
+    sortFolderPaths([...(vault.folders ?? []), ...collectFoldersFromNotes(activeVaultNotes)]).forEach(
+      (folder) => {
+        rootFolder.folder(sanitizeExportPath(folder))
+      },
+    )
+
+    activeVaultNotes.forEach((note) => {
+      const exportPath = getUniqueExportPath(exportedPaths, sanitizeExportPath(ensureMarkdownPath(note.path)))
+      rootFolder.file(exportPath, note.content)
     })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${vault.name.replace(/\s+/g, '-').toLowerCase()}-vault.json`
-    anchor.click()
-    URL.revokeObjectURL(url)
+
+    const blob = await zip.generateAsync({ type: 'blob' })
+    downloadBlob(blob, `${rootName}.zip`)
   }
 
   function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
@@ -1035,7 +1046,7 @@ function App() {
             <UploadCloud size={18} aria-hidden="true" />
             Import files
           </button>
-          <button type="button" onClick={downloadJson} title="Export JSON">
+          <button type="button" onClick={() => void downloadVaultZip()} title="Export vault folder ZIP">
             <FileDown size={18} aria-hidden="true" />
             Export
           </button>
@@ -1445,6 +1456,15 @@ function guessVaultName(file?: File) {
   return path.includes('/') ? path.split('/')[0] : ''
 }
 
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 function getParentFolder(path: string) {
   const segments = path.split('/').filter(Boolean)
   segments.pop()
@@ -1575,6 +1595,35 @@ function getUniqueImportedNotePath(notes: Note[], wantedPath: string) {
     : `${baseName} ${Date.now()}.md`
 }
 
+function getUniqueExportPath(exportedPaths: Set<string>, wantedPath: string) {
+  const normalizedWantedPath = normalizeFolderPath(wantedPath) || 'Untitled.md'
+  const lowerWantedPath = normalizedWantedPath.toLowerCase()
+  if (!exportedPaths.has(lowerWantedPath)) {
+    exportedPaths.add(lowerWantedPath)
+    return normalizedWantedPath
+  }
+
+  const folderPath = getParentFolder(normalizedWantedPath)
+  const fileName = normalizedWantedPath.split('/').pop() || 'Untitled.md'
+  const baseName = fileName.replace(/\.md$/i, '')
+
+  for (let index = 2; index < 10000; index += 1) {
+    const nextPath = folderPath ? `${folderPath}/${baseName} ${index}.md` : `${baseName} ${index}.md`
+    const lowerNextPath = nextPath.toLowerCase()
+
+    if (!exportedPaths.has(lowerNextPath)) {
+      exportedPaths.add(lowerNextPath)
+      return nextPath
+    }
+  }
+
+  const fallbackPath = folderPath
+    ? `${folderPath}/${baseName} ${Date.now()}.md`
+    : `${baseName} ${Date.now()}.md`
+  exportedPaths.add(fallbackPath.toLowerCase())
+  return fallbackPath
+}
+
 function getUniqueNotePath(notes: Note[], folderPath: string) {
   const existingPaths = new Set(notes.map((note) => note.path.toLowerCase()))
 
@@ -1671,6 +1720,31 @@ function sortFolderPaths(paths: string[]) {
   return Array.from(new Set(paths.map(normalizeFolderPath).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),
   )
+}
+
+function ensureMarkdownPath(path: string) {
+  return /\.md$/i.test(path) ? path : `${path}.md`
+}
+
+function sanitizeExportPath(path: string) {
+  return normalizeFolderPath(path)
+    .split('/')
+    .map(sanitizeExportName)
+    .filter(Boolean)
+    .join('/')
+}
+
+function sanitizeExportName(name: string) {
+  const sanitized = name
+    .trim()
+    .split('')
+    .map((character) =>
+      character.charCodeAt(0) < 32 || /[<>:"\\|?*]/.test(character) ? '_' : character,
+    )
+    .join('')
+    .replace(/[. ]+$/g, '')
+
+  return sanitized || 'Cloud Vault'
 }
 
 function buildNoteTree(notes: Note[], folders: string[] = []): NoteTreeNode {
