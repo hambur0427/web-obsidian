@@ -1,7 +1,7 @@
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) minmax(300px, 420px);
+  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) 8px var(--preview-width, 380px);
   background: var(--bg);
   color: var(--text);
 }
@@ -62,7 +62,10 @@ button {
 }
 
 .toolbar button,
-.note-list button,
+.folder-row,
+.note-row,
+.note-trash-button,
+.trash-row button,
 .relation-group button {
   border: 1px solid var(--border);
   background: var(--control);
@@ -85,7 +88,11 @@ button {
 }
 
 .toolbar button:hover,
-.note-list button:hover,
+.folder-row:hover,
+.note-row:hover,
+.note-row-wrap:hover,
+.note-trash-button:hover,
+.trash-row button:hover,
 .relation-group button:hover {
   border-color: var(--accent);
   background: var(--control-hover);
@@ -153,55 +160,238 @@ button {
 .note-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   overflow: auto;
   padding-right: 2px;
 }
 
-.note-list button {
+.tree-node {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.folder-row,
+.note-row-wrap {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 7px;
+}
+
+.folder-row {
+  display: grid;
+  grid-template-columns: 16px 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 8px 10px;
+  padding-left: calc(10px + var(--tree-level, 0) * 16px);
+  color: var(--text-h);
+  font-size: 13px;
+}
+
+.note-row-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  background: var(--control);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.note-row {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
   text-align: left;
+  min-width: 0;
+  border: 0;
+  background: transparent;
   padding: 10px;
-  border-radius: 7px;
+  padding-left: calc(10px + var(--tree-level, 0) * 16px);
 }
 
-.note-list button.active {
+.note-row-wrap.active {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.note-list svg {
+.note-trash-button {
+  width: 30px;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid transparent;
+  border-radius: 0 7px 7px 0;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.note-row-wrap:hover .note-trash-button,
+.note-row-wrap:focus-within .note-trash-button {
+  opacity: 1;
+}
+
+.note-trash-button:hover {
+  color: var(--danger);
+  border-left-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.folder-row svg,
+.note-row svg,
+.trash-panel svg {
   margin-top: 2px;
   color: var(--accent);
 }
 
-.note-list strong,
-.note-list small {
+.folder-row span,
+.note-row strong,
+.note-row small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.note-list strong {
+.folder-row span {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.note-row strong {
   color: var(--text-h);
   font-size: 14px;
   line-height: 1.35;
 }
 
-.note-list small {
+.note-row small {
   color: var(--muted);
   font-size: 12px;
   margin-top: 2px;
 }
 
+.trash-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.trash-panel h2 {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.trash-panel h2 span {
+  min-width: 22px;
+  min-height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trash-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.trash-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--control);
+}
+
+.trash-row button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.trash-row button.danger:hover {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.trash-row span,
+.trash-row strong,
+.trash-row small {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-row strong {
+  color: var(--text-h);
+  font-size: 12px;
+}
+
+.trash-row small {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 1px;
+}
+
 .editor-pane {
   display: grid;
   grid-template-rows: auto 1fr;
+}
+
+.resize-handle {
+  min-height: 100vh;
   border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background:
+    linear-gradient(var(--border), var(--border)) center / 1px 44px no-repeat,
+    var(--panel);
+  cursor: col-resize;
+}
+
+.resize-handle:hover {
+  background:
+    linear-gradient(var(--accent), var(--accent)) center / 2px 64px no-repeat,
+    var(--control-hover);
 }
 
 .note-header {
@@ -382,6 +572,10 @@ textarea {
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .resize-handle {
+    display: none;
   }
 
   .preview-pane {

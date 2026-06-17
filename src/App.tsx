@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import {
   Cloud,
+  ChevronDown,
+  ChevronRight,
   DownloadCloud,
   FileDown,
   FileText,
+  Folder,
   FolderOpen,
   Link2,
   Plus,
+  RotateCcw,
   Search,
+  Trash2,
   UploadCloud,
 } from 'lucide-react'
 import './App.css'
@@ -22,6 +27,7 @@ type Note = {
   content: string
   links: string[]
   updatedAt: string
+  deletedAt?: string
 }
 
 type VaultState = {
@@ -36,9 +42,17 @@ type CloudVaultResponse = {
   error?: string
 }
 
+type NoteTreeNode = {
+  name: string
+  path: string
+  folders: NoteTreeNode[]
+  notes: Note[]
+}
+
 const STORAGE_KEY = 'web-obsidian:vault'
 const API_HEALTH_ENDPOINT = '/api/health'
 const API_VAULT_ENDPOINT = '/api/vault'
+const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 const sampleVault: VaultState = {
   name: 'Demo Cloud Vault',
@@ -81,9 +95,11 @@ function App() {
   const [query, setQuery] = useState('')
   const [cloudStatus, setCloudStatus] = useState('Local mode')
   const [isSyncing, setIsSyncing] = useState(false)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(['Projects']))
+  const [previewWidth, setPreviewWidth] = useState(380)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(vault))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pruneExpiredTrash(vault)))
   }, [vault])
 
   useEffect(() => {
@@ -101,32 +117,42 @@ function App() {
     return () => controller.abort()
   }, [])
 
+  const activeNotes = useMemo(() => getActiveNotes(vault.notes), [vault.notes])
+  const trashedNotes = useMemo(() => getTrashedNotes(vault.notes), [vault.notes])
+
   const notesByTitle = useMemo(() => {
     const map = new Map<string, Note>()
-    vault.notes.forEach((note) => {
+    activeNotes.forEach((note) => {
       map.set(normalizeTitle(note.title), note)
       map.set(normalizeTitle(note.path.replace(/\.md$/i, '')), note)
     })
     return map
-  }, [vault.notes])
+  }, [activeNotes])
 
-  const activeNote = vault.notes.find((note) => note.id === activeId) ?? vault.notes[0]
+  const activeNote = activeNotes.find((note) => note.id === activeId) ?? activeNotes[0]
 
   const filteredNotes = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    if (!needle) return vault.notes
-    return vault.notes.filter((note) =>
+    if (!needle) return activeNotes
+    return activeNotes.filter((note) =>
       [note.title, note.path, note.content].some((value) =>
         value.toLowerCase().includes(needle),
       ),
     )
-  }, [query, vault.notes])
+  }, [activeNotes, query])
+
+  const noteTree = useMemo(() => buildNoteTree(filteredNotes), [filteredNotes])
+
+  const visibleExpandedFolders = useMemo(() => {
+    if (!query.trim()) return expandedFolders
+    return collectFolderPaths(noteTree)
+  }, [expandedFolders, noteTree, query])
 
   const backlinks = useMemo(() => {
     if (!activeNote) return []
     const title = normalizeTitle(activeNote.title)
     const pathTitle = normalizeTitle(activeNote.path.replace(/\.md$/i, ''))
-    return vault.notes.filter(
+    return activeNotes.filter(
       (note) =>
         note.id !== activeNote.id &&
         note.links.some((link) => {
@@ -134,7 +160,7 @@ function App() {
           return normalized === title || normalized === pathTitle
         }),
     )
-  }, [activeNote, vault.notes])
+  }, [activeNote, activeNotes])
 
   const renderedMarkdown = useMemo(() => {
     if (!activeNote) return ''
@@ -169,8 +195,11 @@ function App() {
         throw new Error(data.error || 'No cloud vault found')
       }
 
-      setVault(data.vault)
-      setActiveId(data.vault.notes[0]?.id ?? '')
+      const nextVault = pruneExpiredTrash(data.vault)
+      const nextActiveNotes = getActiveNotes(nextVault.notes)
+      setVault(nextVault)
+      setActiveId(nextActiveNotes[0]?.id ?? '')
+      setExpandedFolders(collectFolderPaths(buildNoteTree(nextActiveNotes)))
       setCloudStatus('Loaded from Vercel Blob')
     } catch (error) {
       setCloudStatus(error instanceof Error ? error.message : 'Load failed')
@@ -189,7 +218,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(vault),
+        body: JSON.stringify(pruneExpiredTrash(vault)),
       })
       const data = (await response.json()) as CloudVaultResponse
 
@@ -215,9 +244,10 @@ function App() {
         !getRelativePath(file).split('/').includes('.obsidian'),
     )
 
+    const vaultName = guessVaultName(markdownFiles[0])
     const notes = await Promise.all(
       markdownFiles.map(async (file) => {
-        const path = getRelativePath(file)
+        const path = stripVaultRoot(getRelativePath(file), vaultName)
         const content = await file.text()
         const title = path.split('/').pop()?.replace(/\.md$/i, '') || file.name
         return {
@@ -232,13 +262,14 @@ function App() {
     )
 
     const importedVault = {
-      name: guessVaultName(markdownFiles[0]) || 'Imported Vault',
+      name: vaultName || 'Imported Vault',
       notes: notes.sort((a, b) => a.path.localeCompare(b.path)),
       importedAt: new Date().toISOString(),
     }
 
     setVault(importedVault)
     setActiveId(importedVault.notes[0]?.id ?? '')
+    setExpandedFolders(collectFolderPaths(buildNoteTree(importedVault.notes)))
     setCloudStatus('Imported locally. Save cloud to persist.')
     event.target.value = ''
   }
@@ -261,6 +292,65 @@ function App() {
     }))
     setActiveId(note.id)
     setCloudStatus('Unsaved local changes')
+  }
+
+  function moveNoteToTrash(noteId: string) {
+    const now = new Date().toISOString()
+    const nextActiveId = activeNotes.find((note) => note.id !== noteId)?.id ?? ''
+
+    setVault((current) => ({
+      ...current,
+      notes: current.notes.map((note) =>
+        note.id === noteId
+          ? {
+              ...note,
+              deletedAt: now,
+              updatedAt: now,
+            }
+          : note,
+      ),
+    }))
+
+    if (activeId === noteId) setActiveId(nextActiveId)
+    setCloudStatus('Moved to trash. Save cloud to persist.')
+  }
+
+  function restoreNote(noteId: string) {
+    setVault((current) => ({
+      ...current,
+      notes: current.notes.map((note) =>
+        note.id === noteId
+          ? {
+              ...note,
+              deletedAt: undefined,
+              updatedAt: new Date().toISOString(),
+            }
+          : note,
+      ),
+    }))
+    setActiveId(noteId)
+    setCloudStatus('Restored locally. Save cloud to persist.')
+  }
+
+  function forceDeleteNote(noteId: string) {
+    setVault((current) => ({
+      ...current,
+      notes: current.notes.filter((note) => note.id !== noteId),
+    }))
+    if (activeId === noteId) setActiveId(activeNotes[0]?.id ?? '')
+    setCloudStatus('Permanently deleted locally. Save cloud to persist.')
+  }
+
+  function toggleFolder(path: string) {
+    setExpandedFolders((current) => {
+      const next = new Set(current)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      return next
+    })
   }
 
   function updateActiveNote(content: string) {
@@ -293,7 +383,27 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  function handlePreviewClick(event: React.MouseEvent<HTMLElement>) {
+  function startPreviewResize(event: ReactMouseEvent<HTMLDivElement>) {
+    event.preventDefault()
+
+    const startX = event.clientX
+    const startWidth = previewWidth
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      const nextWidth = startWidth - (moveEvent.clientX - startX)
+      setPreviewWidth(clamp(nextWidth, 300, 680))
+    }
+
+    function handleMouseUp() {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }
+
+  function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement
     const anchor = target.closest('a')
     const href = anchor?.getAttribute('href')
@@ -303,7 +413,14 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main
+      className="app-shell"
+      style={
+        {
+          '--preview-width': `${previewWidth}px`,
+        } as CSSProperties
+      }
+    >
       <aside className="sidebar">
         <div className="brand">
           <Cloud size={28} aria-hidden="true" />
@@ -372,27 +489,64 @@ function App() {
         </label>
 
         <div className="stats">
-          <span>{vault.notes.length} notes</span>
-          <span>{countLinks(vault.notes)} links</span>
+          <span>{activeNotes.length} notes</span>
+          <span>{countLinks(activeNotes)} links</span>
           <span>{cloudStatus}</span>
         </div>
 
         <nav className="note-list" aria-label="Notes">
-          {filteredNotes.map((note) => (
-            <button
-              type="button"
-              key={note.id}
-              className={note.id === activeNote?.id ? 'active' : ''}
-              onClick={() => setActiveId(note.id)}
-            >
-              <FileText size={16} aria-hidden="true" />
-              <span>
-                <strong>{note.title}</strong>
-                <small>{note.path}</small>
-              </span>
-            </button>
-          ))}
+          {noteTree.folders.map((folder) =>
+            renderFolderNode(folder, {
+              activeId: activeNote?.id ?? '',
+              expandedFolders: visibleExpandedFolders,
+              level: 0,
+              onSelectNote: setActiveId,
+              onToggleFolder: toggleFolder,
+              onTrashNote: moveNoteToTrash,
+            }),
+          )}
+          {noteTree.notes.map((note) =>
+            renderNoteNode(note, {
+              activeId: activeNote?.id ?? '',
+              level: 0,
+              onSelectNote: setActiveId,
+              onTrashNote: moveNoteToTrash,
+            }),
+          )}
         </nav>
+
+        <section className="trash-panel" aria-label="Trash">
+          <h2>
+            <Trash2 size={15} aria-hidden="true" />
+            Trash
+            <span>{trashedNotes.length}</span>
+          </h2>
+          {trashedNotes.length ? (
+            <div className="trash-list">
+              {trashedNotes.map((note) => (
+                <div className="trash-row" key={note.id}>
+                  <button type="button" onClick={() => restoreNote(note.id)} title="Restore note">
+                    <RotateCcw size={14} aria-hidden="true" />
+                  </button>
+                  <span>
+                    <strong>{note.title}</strong>
+                    <small>{getTrashLabel(note)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => forceDeleteNote(note.id)}
+                    title="Delete permanently"
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>Trash is empty</p>
+          )}
+        </section>
       </aside>
 
       <section className="editor-pane">
@@ -416,6 +570,14 @@ function App() {
           <div className="empty-state">Import a vault or create the first note.</div>
         )}
       </section>
+
+      <div
+        className="resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize Markdown preview"
+        onMouseDown={startPreviewResize}
+      />
 
       <aside className="preview-pane">
         <div className="preview-scroll">
@@ -482,6 +644,11 @@ function guessVaultName(file?: File) {
   return path.includes('/') ? path.split('/')[0] : ''
 }
 
+function stripVaultRoot(path: string, vaultName: string) {
+  if (!vaultName) return path
+  return path.startsWith(`${vaultName}/`) ? path.slice(vaultName.length + 1) : path
+}
+
 function extractWikiLinks(content: string) {
   return Array.from(content.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g))
     .map((match) => match[1].trim())
@@ -494,6 +661,186 @@ function normalizeTitle(value: string) {
 
 function countLinks(notes: Note[]) {
   return notes.reduce((total, note) => total + note.links.length, 0)
+}
+
+function getActiveNotes(notes: Note[]) {
+  return notes.filter((note) => !note.deletedAt)
+}
+
+function getTrashedNotes(notes: Note[]) {
+  const now = Date.now()
+  return notes.filter((note) => note.deletedAt && now - Date.parse(note.deletedAt) < TRASH_RETENTION_MS)
+}
+
+function pruneExpiredTrash(vault: VaultState): VaultState {
+  const now = Date.now()
+  return {
+    ...vault,
+    notes: vault.notes.filter((note) => !note.deletedAt || now - Date.parse(note.deletedAt) < TRASH_RETENTION_MS),
+  }
+}
+
+function getTrashLabel(note: Note) {
+  if (!note.deletedAt) return note.path
+
+  const deletedAt = Date.parse(note.deletedAt)
+  const remainingMs = Math.max(TRASH_RETENTION_MS - (Date.now() - deletedAt), 0)
+  const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000))
+  return `${remainingDays} day${remainingDays === 1 ? '' : 's'} left - ${note.path}`
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function buildNoteTree(notes: Note[]): NoteTreeNode {
+  const root: NoteTreeNode = {
+    name: '',
+    path: '',
+    folders: [],
+    notes: [],
+  }
+
+  notes.forEach((note) => {
+    const segments = note.path.split('/').filter(Boolean)
+    const fileName = segments.pop()
+
+    if (!fileName) return
+
+    let current = root
+    segments.forEach((segment) => {
+      const folderPath = current.path ? `${current.path}/${segment}` : segment
+      let folder = current.folders.find((item) => item.path === folderPath)
+
+      if (!folder) {
+        folder = {
+          name: segment,
+          path: folderPath,
+          folders: [],
+          notes: [],
+        }
+        current.folders.push(folder)
+      }
+
+      current = folder
+    })
+
+    current.notes.push(note)
+  })
+
+  sortTree(root)
+  return root
+}
+
+function sortTree(node: NoteTreeNode) {
+  node.folders.sort((a, b) => a.name.localeCompare(b.name))
+  node.notes.sort((a, b) => a.title.localeCompare(b.title))
+  node.folders.forEach(sortTree)
+}
+
+function collectFolderPaths(node: NoteTreeNode) {
+  const paths = new Set<string>()
+
+  function visit(folder: NoteTreeNode) {
+    folder.folders.forEach((child) => {
+      paths.add(child.path)
+      visit(child)
+    })
+  }
+
+  visit(node)
+  return paths
+}
+
+function renderFolderNode(
+  folder: NoteTreeNode,
+  options: {
+    activeId: string
+    expandedFolders: Set<string>
+    level: number
+    onSelectNote: (id: string) => void
+    onToggleFolder: (path: string) => void
+    onTrashNote: (id: string) => void
+  },
+) {
+  const isExpanded = options.expandedFolders.has(folder.path)
+
+  return (
+    <div className="tree-node" key={folder.path}>
+      <button
+        type="button"
+        className="folder-row"
+        style={{ '--tree-level': options.level } as CSSProperties}
+        onClick={() => options.onToggleFolder(folder.path)}
+        aria-expanded={isExpanded}
+      >
+        {isExpanded ? (
+          <ChevronDown size={15} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={15} aria-hidden="true" />
+        )}
+        {isExpanded ? (
+          <FolderOpen size={16} aria-hidden="true" />
+        ) : (
+          <Folder size={16} aria-hidden="true" />
+        )}
+        <span>{folder.name}</span>
+      </button>
+
+      {isExpanded ? (
+        <div className="tree-children">
+          {folder.folders.map((child) =>
+            renderFolderNode(child, {
+              ...options,
+              level: options.level + 1,
+            }),
+          )}
+          {folder.notes.map((note) =>
+            renderNoteNode(note, {
+              activeId: options.activeId,
+              level: options.level + 1,
+              onSelectNote: options.onSelectNote,
+              onTrashNote: options.onTrashNote,
+            }),
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function renderNoteNode(
+  note: Note,
+  options: {
+    activeId: string
+    level: number
+    onSelectNote: (id: string) => void
+    onTrashNote: (id: string) => void
+  },
+) {
+  return (
+    <div
+      className={note.id === options.activeId ? 'note-row-wrap active' : 'note-row-wrap'}
+      key={note.id}
+      style={{ '--tree-level': options.level } as CSSProperties}
+    >
+      <button type="button" className="note-row" onClick={() => options.onSelectNote(note.id)}>
+        <FileText size={16} aria-hidden="true" />
+        <span>
+          <strong>{note.title}</strong>
+          <small>{note.path}</small>
+        </span>
+      </button>
+      <button
+        type="button"
+        className="note-trash-button"
+        onClick={() => options.onTrashNote(note.id)}
+        title="Move to trash"
+      >
+        <Trash2 size={14} aria-hidden="true" />
+      </button>
+    </div>
+  )
 }
 
 export default App

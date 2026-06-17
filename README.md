@@ -8,9 +8,13 @@ Cloud-ready Obsidian-style vault prototype built with Vite, React, TypeScript, a
 - Import multiple Markdown files.
 - Preserve imported folder paths.
 - Ignore `.obsidian` configuration folders.
+- Display imported notes as an expandable folder tree.
 - Edit Markdown with live preview.
+- Resize the Markdown preview pane.
 - Resolve `[[wiki links]]`.
 - Show outgoing links and backlinks.
+- Move notes to Trash before permanent deletion.
+- Keep trashed notes for 7 days unless they are force deleted.
 - Store a local working copy in browser `localStorage`.
 - Save and load the current vault from Vercel Blob.
 - Provide a Vercel API surface under `/api`.
