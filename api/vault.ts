@@ -1,10 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { BlobNotFoundError, get, put } from '@vercel/blob'
+import { requireAuth } from './_auth.js'
 
 const VAULT_PATH = 'vaults/default.json'
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   try {
+    if (!requireAuth(request, response)) return
+
     if (request.method === 'GET') {
       return await readVault(response)
     }

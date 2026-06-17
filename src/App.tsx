@@ -3,6 +3,7 @@ import type {
   ChangeEvent,
   CSSProperties,
   DragEvent as ReactDragEvent,
+  FormEvent,
   MouseEvent as ReactMouseEvent,
 } from 'react'
 import DOMPurify from 'dompurify'
@@ -49,6 +50,13 @@ type CloudVaultResponse = {
   error?: string
 }
 
+type AuthSessionResponse = {
+  ok: boolean
+  authRequired: boolean
+  authenticated: boolean
+  error?: string
+}
+
 type NoteTreeNode = {
   name: string
   path: string
@@ -88,6 +96,9 @@ type RenameTarget =
 const STORAGE_KEY = 'web-obsidian:vault'
 const API_HEALTH_ENDPOINT = '/api/health'
 const API_VAULT_ENDPOINT = '/api/vault'
+const API_SESSION_ENDPOINT = '/api/session'
+const API_LOGIN_ENDPOINT = '/api/login'
+const API_LOGOUT_ENDPOINT = '/api/logout'
 const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 const sampleVault: VaultState = {
@@ -137,6 +148,12 @@ function App() {
   const [previewWidth, setPreviewWidth] = useState(380)
   const [cloudReady, setCloudReady] = useState(false)
   const [cloudInitialized, setCloudInitialized] = useState(false)
+  const [authChecking, setAuthChecking] = useState(true)
+  const [authenticated, setAuthenticated] = useState(false)
+  const [authRequired, setAuthRequired] = useState(true)
+  const [password, setPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [trashExpanded, setTrashExpanded] = useState(false)
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -165,9 +182,46 @@ function App() {
   useEffect(() => {
     const controller = new AbortController()
 
+    async function initializeSession() {
+      try {
+        const response = await fetch(API_SESSION_ENDPOINT, {
+          signal: controller.signal,
+          credentials: 'same-origin',
+        })
+        const data = (await response.json()) as AuthSessionResponse
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Session check failed')
+        }
+
+        setAuthRequired(data.authRequired)
+        setAuthenticated(data.authenticated)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setAuthRequired(false)
+        setAuthenticated(true)
+        setAuthError(error instanceof Error ? error.message : 'Session check failed')
+      } finally {
+        if (!controller.signal.aborted) setAuthChecking(false)
+      }
+    }
+
+    initializeSession()
+
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    if (authChecking || !authenticated) return
+
+    const controller = new AbortController()
+
     async function initializeCloud() {
       try {
-        const healthResponse = await fetch(API_HEALTH_ENDPOINT, { signal: controller.signal })
+        const healthResponse = await fetch(API_HEALTH_ENDPOINT, {
+          signal: controller.signal,
+          credentials: 'same-origin',
+        })
         const health = (await healthResponse.json()) as { storage?: string }
 
         if (!healthResponse.ok || health.storage !== 'blob-configured') {
@@ -180,7 +234,18 @@ function App() {
         setCloudReady(true)
         setCloudStatus('Loading cloud vault')
 
-        const vaultResponse = await fetch(API_VAULT_ENDPOINT, { signal: controller.signal })
+        const vaultResponse = await fetch(API_VAULT_ENDPOINT, {
+          signal: controller.signal,
+          credentials: 'same-origin',
+        })
+
+        if (vaultResponse.status === 401) {
+          setAuthenticated(false)
+          setCloudReady(false)
+          setCloudStatus('Sign in required')
+          setCloudInitialized(false)
+          return
+        }
 
         if (vaultResponse.status === 404) {
           lastSavedCloudSignatureRef.current = hasLocalVaultRef.current
@@ -216,10 +281,10 @@ function App() {
     initializeCloud()
 
     return () => controller.abort()
-  }, [])
+  }, [authChecking, authenticated])
 
   useEffect(() => {
-    if (!cloudReady || !cloudInitialized) return
+    if (!authenticated || !cloudReady || !cloudInitialized) return
 
     const nextVault = pruneExpiredTrash(vault)
     const nextSignature = JSON.stringify(nextVault)
@@ -236,11 +301,17 @@ function App() {
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'same-origin',
           body: nextSignature,
         })
         const data = (await response.json()) as CloudVaultResponse
 
         if (!response.ok) {
+          if (response.status === 401) {
+            setAuthenticated(false)
+            setCloudReady(false)
+            setCloudInitialized(false)
+          }
           throw new Error(data.error || 'Autosave failed')
         }
 
@@ -254,7 +325,7 @@ function App() {
     }, 1000)
 
     return () => window.clearTimeout(timeoutId)
-  }, [cloudInitialized, cloudReady, vault])
+  }, [authenticated, cloudInitialized, cloudReady, vault])
 
   const activeNotes = useMemo(() => getActiveNotes(vault.notes), [vault.notes])
   const trashedNotes = useMemo(() => getTrashedNotes(vault.notes), [vault.notes])
@@ -313,6 +384,51 @@ function App() {
     )
     return DOMPurify.sanitize(marked.parse(linkedContent) as string)
   }, [activeNote, notesByTitle])
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAuthError('')
+    setIsLoggingIn(true)
+
+    try {
+      const response = await fetch(API_LOGIN_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ password }),
+      })
+      const data = (await response.json()) as AuthSessionResponse
+
+      if (!response.ok || !data.authenticated) {
+        throw new Error(data.error || 'Login failed')
+      }
+
+      setAuthenticated(true)
+      setAuthRequired(data.authRequired)
+      setPassword('')
+      setCloudInitialized(false)
+      setCloudReady(false)
+      setCloudStatus('Loading cloud vault')
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Login failed')
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }
+
+  async function logout() {
+    await fetch(API_LOGOUT_ENDPOINT, {
+      method: 'POST',
+      credentials: 'same-origin',
+    })
+
+    setAuthenticated(false)
+    setCloudReady(false)
+    setCloudInitialized(false)
+    setCloudStatus('Signed out')
+  }
 
   function openDirectoryPicker() {
     directoryInputRef.current?.click()
@@ -834,6 +950,43 @@ function App() {
     setActiveId(href.replace('#note:', ''))
   }
 
+  if (authChecking) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-panel">
+          <Cloud size={34} aria-hidden="true" />
+          <h1>Cloud Vault</h1>
+          <p>Checking session...</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (authRequired && !authenticated) {
+    return (
+      <main className="auth-shell">
+        <form className="auth-panel" onSubmit={login}>
+          <Cloud size={34} aria-hidden="true" />
+          <h1>Cloud Vault</h1>
+          <label>
+            <span>Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoFocus
+              autoComplete="current-password"
+            />
+          </label>
+          {authError ? <p className="auth-error">{authError}</p> : null}
+          <button type="submit" disabled={isLoggingIn || !password}>
+            {isLoggingIn ? 'Signing in' : 'Sign in'}
+          </button>
+        </form>
+      </main>
+    )
+  }
+
   return (
     <main
       className="app-shell"
@@ -864,6 +1017,9 @@ function App() {
           <button type="button" onClick={downloadJson} title="Export JSON">
             <FileDown size={18} aria-hidden="true" />
             Export
+          </button>
+          <button type="button" onClick={logout} title="Sign out">
+            Sign out
           </button>
         </div>
 
