@@ -558,6 +558,42 @@ function App() {
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Moved to trash')
   }
 
+  function moveFolderToTrash(folderPath: string) {
+    const source = normalizeFolderPath(folderPath)
+    if (!source) return
+
+    const now = new Date().toISOString()
+    const trashedActiveNotes = new Set(
+      activeNotes.filter((note) => isPathInFolder(note.path, source)).map((note) => note.id),
+    )
+    const nextActiveId = activeNotes.find((note) => !trashedActiveNotes.has(note.id))?.id ?? ''
+
+    setVault((current) => ({
+      ...current,
+      folders: (current.folders ?? []).filter((folder) => !isPathInFolder(folder, source)),
+      notes: current.notes.map((note) =>
+        isPathInFolder(note.path, source)
+          ? {
+              ...note,
+              deletedAt: now,
+              updatedAt: now,
+            }
+          : note,
+      ),
+    }))
+
+    setExpandedFolders((current) => {
+      const next = new Set(current)
+      current.forEach((path) => {
+        if (isPathInFolder(path, source)) next.delete(path)
+      })
+      return next
+    })
+
+    if (trashedActiveNotes.has(activeId)) setActiveId(nextActiveId)
+    setCloudStatus(cloudReady ? 'Autosave pending' : 'Folder moved to trash')
+  }
+
   function restoreNote(noteId: string) {
     setVault((current) => ({
       ...current,
@@ -1023,13 +1059,23 @@ function App() {
             New folder
           </button>
           {contextMenu.type === 'folder' ? (
-            <button
-              type="button"
-              onClick={() => runContextAction(() => startRenameFolder(contextMenu.folderPath))}
-            >
-              <Pencil size={15} aria-hidden="true" />
-              Rename folder
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => runContextAction(() => startRenameFolder(contextMenu.folderPath))}
+              >
+                <Pencil size={15} aria-hidden="true" />
+                Rename folder
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => runContextAction(() => moveFolderToTrash(contextMenu.folderPath))}
+              >
+                <Trash2 size={15} aria-hidden="true" />
+                Move folder to trash
+              </button>
+            </>
           ) : null}
         </div>
       ) : null}
@@ -1315,6 +1361,13 @@ function replacePathPrefix(path: string, sourcePrefix: string, nextPrefix: strin
   if (path === sourcePrefix) return nextPrefix
   if (path.startsWith(`${sourcePrefix}/`)) return `${nextPrefix}${path.slice(sourcePrefix.length)}`
   return path
+}
+
+function isPathInFolder(path: string, folderPath: string) {
+  const normalizedPath = normalizeFolderPath(path).toLowerCase()
+  const normalizedFolder = normalizeFolderPath(folderPath).toLowerCase()
+
+  return normalizedPath === normalizedFolder || normalizedPath.startsWith(`${normalizedFolder}/`)
 }
 
 function collectParentFolders(path: string) {
