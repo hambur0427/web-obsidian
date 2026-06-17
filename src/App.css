@@ -92,15 +92,19 @@ button {
 
 .toolbar button:hover,
 .file-actions button:hover,
-.folder-row:hover,
-.note-row:hover,
-.note-row-wrap:hover,
 .note-action-button:hover,
 .trash-row button:hover,
 .trash-toggle:hover,
 .context-menu button:hover,
 .relation-group button:hover {
   border-color: var(--accent);
+  background: var(--control-hover);
+}
+
+.folder-row:hover,
+.note-row:hover,
+.note-row-wrap:hover {
+  border-color: transparent;
   background: var(--control-hover);
 }
 
@@ -207,8 +211,8 @@ button {
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 36px;
-  border-radius: 7px;
+  min-height: 30px;
+  border-radius: 4px;
 }
 
 .folder-row::before,
@@ -230,8 +234,10 @@ button {
   gap: 8px;
   align-items: center;
   text-align: left;
-  padding: 8px 10px;
+  padding: 5px 8px;
   padding-left: var(--tree-padding-left, 10px);
+  border-color: transparent;
+  background: transparent;
   color: var(--text-h);
   font-size: 13px;
 }
@@ -250,8 +256,8 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 30px 30px;
   align-items: stretch;
-  border: 1px solid var(--border);
-  background: var(--control);
+  border: 1px solid transparent;
+  background: transparent;
   transition:
     border-color 0.18s ease,
     background 0.18s ease;
@@ -266,7 +272,7 @@ button {
   min-width: 0;
   border: 0;
   background: transparent;
-  padding: 10px;
+  padding: 6px 8px;
   padding-left: var(--tree-padding-left, 10px);
 }
 
@@ -288,7 +294,7 @@ button {
 }
 
 .note-row-wrap.active {
-  border-color: var(--accent);
+  border-color: transparent;
   background: var(--accent-soft);
 }
 
