@@ -1,6 +1,6 @@
-import { RangeSetBuilder } from '@codemirror/state'
-import type { Text } from '@codemirror/state'
-import { Decoration, EditorView, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view'
+import { RangeSetBuilder, StateField } from '@codemirror/state'
+import type { EditorState, Text } from '@codemirror/state'
+import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 
 type Item = { from: number; to: number; deco: Decoration }
@@ -114,7 +114,7 @@ interface BlockRange {
 function findBlockRanges(doc: Text): BlockRange[] {
   const ranges: BlockRange[] = []
 
-  // ── Code fences ──
+  // Code fences
   let fenceStart = -1
   let fenceLang  = ''
   let fenceLines: string[] = []
@@ -124,9 +124,7 @@ function findBlockRanges(doc: Text): BlockRange[] {
     const m = /^(`{3,}|~{3,})(\w*)/.exec(line.text)
     if (m) {
       if (fenceStart === -1) {
-        fenceStart = i
-        fenceLang  = m[2]
-        fenceLines = []
+        fenceStart = i; fenceLang = m[2]; fenceLines = []
       } else {
         ranges.push({
           from: doc.line(fenceStart).from,
@@ -144,8 +142,8 @@ function findBlockRanges(doc: Text): BlockRange[] {
     }
   }
 
-  // ── Tables (skipping content inside code fences) ──
-  const fenceLineNums = new Set(ranges.flatMap((r) => {
+  // Tables (skip lines already inside code fences)
+  const fenceLines2 = new Set(ranges.flatMap((r) => {
     const nums: number[] = []
     for (let n = r.fromLine; n <= r.toLine; n++) nums.push(n)
     return nums
@@ -171,12 +169,11 @@ function findBlockRanges(doc: Text): BlockRange[] {
         }),
       })
     }
-    tableStart = -1
-    tableLines = []
+    tableStart = -1; tableLines = []
   }
 
   for (let i = 1; i <= doc.lines; i++) {
-    if (fenceLineNums.has(i)) { flushTable(i - 1); continue }
+    if (fenceLines2.has(i)) { flushTable(i - 1); continue }
     const line = doc.line(i)
     if (/^\|/.test(line.text)) {
       if (tableStart === -1) tableStart = i
@@ -191,14 +188,14 @@ function findBlockRanges(doc: Text): BlockRange[] {
   return ranges
 }
 
-// ── Inline decoration collection ──────────────────────────────────────────────
+// ── Inline decorations ────────────────────────────────────────────────────────
 
 function collectInline(offset: number, text: string): Item[] {
   const items: Item[] = []
 
   function push(m: RegExpExecArray, openLen: number, closeLen: number, deco: Decoration) {
-    const s     = offset + m.index!
-    const e     = s + m[0].length
+    const s = offset + m.index!
+    const e = s + m[0].length
     const iFrom = s + openLen
     const iTo   = e - closeLen
     if (iFrom >= iTo) return
@@ -218,9 +215,9 @@ function collectInline(offset: number, text: string): Item[] {
     if (m[2] !== undefined) {
       const pipePos = s + m[0].lastIndexOf('|')
       if (pipePos + 1 < e - 2) {
-        items.push({ from: s,          to: pipePos + 1, deco: mkHidden })
-        items.push({ from: pipePos + 1, to: e - 2,      deco: mkWikiLink })
-        items.push({ from: e - 2,       to: e,           deco: mkHidden })
+        items.push({ from: s,           to: pipePos + 1, deco: mkHidden })
+        items.push({ from: pipePos + 1, to: e - 2,       deco: mkWikiLink })
+        items.push({ from: e - 2,       to: e,            deco: mkHidden })
       }
     } else if (s + 2 < e - 2) {
       items.push({ from: s,     to: s + 2, deco: mkHidden })
@@ -234,26 +231,22 @@ function collectInline(offset: number, text: string): Item[] {
   const result: Item[] = []
   let lastTo = -Infinity
   for (const item of items) {
-    if (item.from >= lastTo) {
-      result.push(item)
-      lastTo = Math.max(lastTo, item.to)
-    }
+    if (item.from >= lastTo) { result.push(item); lastTo = Math.max(lastTo, item.to) }
   }
   return result
 }
 
-// ── Main builder ──────────────────────────────────────────────────────────────
+// ── Decoration builder ────────────────────────────────────────────────────────
 
-function buildDecorations(view: EditorView): DecorationSet {
-  const doc        = view.state.doc
-  const sel        = view.state.selection.main
-  const curFrom    = doc.lineAt(sel.from).number
-  const curTo      = doc.lineAt(sel.to).number
+function buildDecorations(state: EditorState): DecorationSet {
+  const doc         = state.doc
+  const sel         = state.selection.main
+  const curFrom     = doc.lineAt(sel.from).number
+  const curTo       = doc.lineAt(sel.to).number
   const blockRanges = findBlockRanges(doc)
-
   const allItems: Item[] = []
 
-  // Add inactive block widgets
+  // Block widgets for inactive blocks
   for (const block of blockRanges) {
     const active = block.fromLine <= curTo && block.toLine >= curFrom
     if (!active) {
@@ -261,71 +254,56 @@ function buildDecorations(view: EditorView): DecorationSet {
     }
   }
 
-  // Inline / heading decorations for non-blocked lines
-  for (const { from: vpFrom, to: vpTo } of view.visibleRanges) {
-    let pos = vpFrom
-    while (pos <= vpTo) {
-      const line    = doc.lineAt(pos)
-      const lineNum = line.number
-      const isActive = lineNum >= curFrom && lineNum <= curTo
+  // Inline / heading decorations (scan all lines)
+  for (let i = 1; i <= doc.lines; i++) {
+    const line    = doc.line(i)
+    const lineNum = line.number
+    const isActive = lineNum >= curFrom && lineNum <= curTo
 
-      // Skip lines inside an inactive block
-      const blocked = blockRanges.some(
-        (b) =>
-          b.fromLine <= lineNum &&
-          b.toLine >= lineNum &&
-          !(b.fromLine <= curTo && b.toLine >= curFrom),
-      )
+    const blocked = blockRanges.some(
+      (b) =>
+        b.fromLine <= lineNum &&
+        b.toLine >= lineNum &&
+        !(b.fromLine <= curTo && b.toLine >= curFrom),
+    )
+    if (blocked) continue
 
-      if (!blocked) {
-        const { text, from: lFrom, to: lTo } = line
-        const hm = /^(#{1,6}) /.exec(text)
+    const { text, from: lFrom, to: lTo } = line
+    const hm = /^(#{1,6}) /.exec(text)
 
-        if (hm) {
-          const level     = hm[1].length
-          const prefixEnd = lFrom + hm[0].length
-          const chunk: Item[] = []
+    if (hm) {
+      const level     = hm[1].length
+      const prefixEnd = lFrom + hm[0].length
+      const chunk: Item[] = []
 
-          if (!isActive)            chunk.push({ from: lFrom, to: prefixEnd, deco: mkHidden })
-          if (prefixEnd <= lTo)     chunk.push({ from: prefixEnd, to: lTo, deco: mkHeadings[level - 1] })
-          if (!isActive && prefixEnd < lTo) {
-            chunk.push(...collectInline(prefixEnd, text.slice(hm[0].length)))
-          }
+      if (!isActive)            chunk.push({ from: lFrom, to: prefixEnd, deco: mkHidden })
+      if (prefixEnd <= lTo)     chunk.push({ from: prefixEnd, to: lTo, deco: mkHeadings[level - 1] })
+      if (!isActive && prefixEnd < lTo) chunk.push(...collectInline(prefixEnd, text.slice(hm[0].length)))
 
-          chunk.sort((a, b) => a.from - b.from || a.to - b.to)
-          allItems.push(...chunk)
-        } else if (!isActive) {
-          allItems.push(...collectInline(lFrom, text))
-        }
-      }
-
-      pos = line.to + 1
+      chunk.sort((a, b) => a.from - b.from || a.to - b.to)
+      allItems.push(...chunk)
+    } else if (!isActive) {
+      allItems.push(...collectInline(lFrom, text))
     }
   }
 
   allItems.sort((a, b) => a.from - b.from || a.to - b.to)
 
   const builder = new RangeSetBuilder<Decoration>()
-  for (const { from, to, deco } of allItems) {
-    builder.add(from, to, deco)
-  }
+  for (const { from, to, deco } of allItems) builder.add(from, to, deco)
   return builder.finish()
 }
 
-// ── ViewPlugin ────────────────────────────────────────────────────────────────
+// ── StateField (allows Decoration.replace across line breaks) ─────────────────
 
-const livePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-    constructor(view: EditorView) { this.decorations = buildDecorations(view) }
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = buildDecorations(update.view)
-      }
-    }
+const livePreviewField = StateField.define<DecorationSet>({
+  create: (state) => buildDecorations(state),
+  update: (deco, tr) => {
+    if (tr.docChanged || tr.selection) return buildDecorations(tr.state)
+    return deco.map(tr.changes)
   },
-  { decorations: (v) => v.decorations },
-)
+  provide: (f) => EditorView.decorations.from(f),
+})
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
@@ -348,5 +326,5 @@ export function createLivePreviewExtensions(onNavigate: (target: string) => void
     },
   })
 
-  return [livePreviewPlugin, clickHandler]
+  return [livePreviewField, clickHandler]
 }
