@@ -78,6 +78,7 @@ type RenameTarget =
   | {
       type: 'note'
       id: string
+      source: 'tree' | 'header'
     }
   | {
       type: 'folder'
@@ -404,13 +405,13 @@ function App() {
     setCloudStatus(cloudReady ? 'Autosave pending' : 'Folder created locally')
   }
 
-  function startRenameNote(noteId: string) {
+  function startRenameNote(noteId: string, source: 'tree' | 'header' = 'tree') {
     const note = vault.notes.find((item) => item.id === noteId)
     if (!note) return
 
     const currentName = note.path.split('/').pop()?.replace(/\.md$/i, '') || note.title
     setActiveId(noteId)
-    setRenameTarget({ type: 'note', id: noteId })
+    setRenameTarget({ type: 'note', id: noteId, source })
     setRenameDraft(currentName)
   }
 
@@ -976,7 +977,10 @@ function App() {
             <>
               <button
                 type="button"
-                onPointerDown={(event) => {
+                onMouseDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
                   const noteId = contextMenu.noteId
@@ -1035,7 +1039,7 @@ function App() {
           <>
             <header className="note-header">
               <div>
-                {isRenamingNote(renameTarget, activeNote.id) ? (
+                {isRenamingNote(renameTarget, activeNote.id, 'header') ? (
                   <>
                     <p>{getParentFolder(activeNote.path) || 'Root'}</p>
                     <input
@@ -1064,7 +1068,7 @@ function App() {
                       onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
                         event.stopPropagation()
-                        startRenameNote(activeNote.id)
+                        startRenameNote(activeNote.id, 'header')
                       }}
                       title="Rename Markdown file"
                     >
@@ -1076,7 +1080,7 @@ function App() {
                       onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
                         event.stopPropagation()
-                        startRenameNote(activeNote.id)
+                        startRenameNote(activeNote.id, 'header')
                       }}
                       title="Rename Markdown file"
                     >
@@ -1552,7 +1556,7 @@ function renderNoteNode(
   },
 ) {
   const parentPath = getParentFolder(note.path)
-  const isRenaming = isRenamingNote(options.renameTarget, note.id)
+  const isRenaming = isRenamingNote(options.renameTarget, note.id, 'tree')
 
   return (
     <div
@@ -1607,15 +1611,14 @@ function renderNoteNode(
         type="button"
         className="note-action-button"
         draggable={false}
-        onPointerDown={(event) => {
-          event.preventDefault()
+        onMouseDown={(event) => {
           event.stopPropagation()
-          options.onSelectNote(note.id)
-          options.onRenameNote(note.id)
         }}
         onClick={(event) => {
           event.preventDefault()
           event.stopPropagation()
+          options.onSelectNote(note.id)
+          options.onRenameNote(note.id)
         }}
         title="Rename Markdown file"
       >
@@ -1651,8 +1654,12 @@ function getTreeRowStyle(level: number) {
   } as CSSProperties
 }
 
-function isRenamingNote(target: RenameTarget | null, noteId: string) {
-  return target?.type === 'note' && target.id === noteId
+function isRenamingNote(
+  target: RenameTarget | null,
+  noteId: string,
+  source?: 'tree' | 'header',
+) {
+  return target?.type === 'note' && target.id === noteId && (!source || target.source === source)
 }
 
 function isRenamingFolder(target: RenameTarget | null, folderPath: string) {
