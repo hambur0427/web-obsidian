@@ -1,3 +1,4 @@
+import { redo, undo } from '@codemirror/commands'
 import { StateField } from '@codemirror/state'
 import type { EditorState, Range, Text } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
@@ -119,6 +120,18 @@ class TableWidget extends WidgetType {
     const wrap = document.createElement('div')
     wrap.className = 'cm-md-table'
 
+    // Route editor shortcuts (undo/redo) to CodeMirror even when a cell input
+    // is focused, otherwise the browser would undo the input in isolation.
+    wrap.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault(); undo(view); view.focus()
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault(); redo(view); view.focus()
+      }
+    })
+
     const table = document.createElement('table')
 
     const thead = document.createElement('thead')
@@ -185,6 +198,19 @@ class TableWidget extends WidgetType {
       rows.pop()
       commit()
     }))
+
+    const delBtn = mkBtn('Delete table', () => {
+      const docLen = view.state.doc.length
+      let delTo = to
+      // Also swallow the trailing newline so no blank line is left behind.
+      if (delTo < docLen && view.state.doc.sliceString(delTo, delTo + 1) === '\n') {
+        delTo += 1
+      }
+      view.dispatch({ changes: { from, to: delTo, insert: '' } })
+      view.focus()
+    })
+    delBtn.classList.add('danger')
+    bar.appendChild(delBtn)
 
     wrap.appendChild(bar)
     return wrap

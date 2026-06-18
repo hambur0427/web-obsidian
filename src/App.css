@@ -950,6 +950,15 @@ button {
   color: var(--text-h);
 }
 
+.cm-md-table-toolbar button.danger {
+  margin-left: auto;
+}
+
+.cm-md-table-toolbar button.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .relations-footer {
   padding: 20px 32px 28px;
   border-top: 1px solid var(--border);
