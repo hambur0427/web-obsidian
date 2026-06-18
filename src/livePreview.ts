@@ -134,17 +134,35 @@ class TableWidget extends WidgetType {
       }
     })
 
+    // Cells use auto-growing textareas so long content wraps onto new lines
+    // instead of being clipped. Enter is suppressed (table cells are single
+    // logical lines) and any pasted newlines collapse to spaces on commit.
+    const cells: HTMLTextAreaElement[] = []
+    const autoSize = (ta: HTMLTextAreaElement) => {
+      ta.style.height = 'auto'
+      ta.style.height = `${ta.scrollHeight}px`
+    }
+    const makeCell = (value: string, onCommit: (next: string) => void) => {
+      const ta = document.createElement('textarea')
+      ta.rows = 1
+      ta.value = value
+      ta.addEventListener('mousedown', (e) => e.stopPropagation())
+      ta.addEventListener('input', () => autoSize(ta))
+      ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); ta.blur() }
+      })
+      ta.addEventListener('change', () => onCommit(ta.value.replace(/\s*\n\s*/g, ' ')))
+      cells.push(ta)
+      return ta
+    }
+
     const table = document.createElement('table')
 
     const thead = document.createElement('thead')
     const htr   = document.createElement('tr')
     headers.forEach((h, c) => {
       const th = document.createElement('th')
-      const input = document.createElement('input')
-      input.value = h
-      input.addEventListener('mousedown', (e) => e.stopPropagation())
-      input.addEventListener('change', () => { headers[c] = input.value; commit() })
-      th.appendChild(input)
+      th.appendChild(makeCell(h, (next) => { headers[c] = next; commit() }))
       htr.appendChild(th)
     })
     thead.appendChild(htr)
@@ -155,17 +173,16 @@ class TableWidget extends WidgetType {
       const tr = document.createElement('tr')
       headers.forEach((_, c) => {
         const td = document.createElement('td')
-        const input = document.createElement('input')
-        input.value = row[c] ?? ''
-        input.addEventListener('mousedown', (e) => e.stopPropagation())
-        input.addEventListener('change', () => { rows[r][c] = input.value; commit() })
-        td.appendChild(input)
+        td.appendChild(makeCell(row[c] ?? '', (next) => { rows[r][c] = next; commit() }))
         tr.appendChild(td)
       })
       tbody.appendChild(tr)
     })
     table.appendChild(tbody)
     wrap.appendChild(table)
+
+    // Size textareas to their content once the browser has laid them out.
+    requestAnimationFrame(() => cells.forEach(autoSize))
 
     // Toolbar
     const bar = document.createElement('div')

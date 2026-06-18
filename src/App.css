@@ -888,7 +888,8 @@ button {
 
 .cm-md-table table {
   border-collapse: collapse;
-  min-width: 100%;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .cm-md-table th,
@@ -902,9 +903,9 @@ button {
   background: var(--control-hover);
 }
 
-.cm-md-table input {
+.cm-md-table textarea {
+  display: block;
   width: 100%;
-  min-width: 90px;
   box-sizing: border-box;
   border: 0;
   outline: 0;
@@ -913,14 +914,19 @@ button {
   color: var(--text);
   font: inherit;
   font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.cm-md-table th input {
+.cm-md-table th textarea {
   font-weight: 700;
   color: var(--text-h);
 }
 
-.cm-md-table input:focus {
+.cm-md-table textarea:focus {
   background: var(--accent-soft);
 }
 
