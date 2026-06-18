@@ -880,9 +880,11 @@ button {
 
 /* Interactive table widget rendered by livePreview.ts */
 
+/* Use padding, never margin: CodeMirror measures widget height excluding
+   margins, so a margin here desyncs the height map and breaks focus/clicks. */
 .cm-md-table {
   display: block;
-  margin: 4px 0 16px;
+  padding: 4px 0 16px;
   overflow-x: auto;
 }
 
