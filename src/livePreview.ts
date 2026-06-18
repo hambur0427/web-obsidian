@@ -57,7 +57,20 @@ class MathWidget extends WidgetType {
     return el
   }
 
-  ignoreEvent() { return false }
+  ignoreEvent(event: Event) {
+    // For a block formula that overflows horizontally, let the user drag the
+    // bottom scrollbar without it being treated as a click (which would switch
+    // the block into edit mode). clientHeight excludes the scrollbar, so a
+    // pointer below it is on the scrollbar.
+    if (this.display && event instanceof MouseEvent) {
+      const block = (event.target as HTMLElement | null)?.closest?.('.cm-math-block')
+      if (block instanceof HTMLElement) {
+        const y = event.clientY - block.getBoundingClientRect().top
+        if (y > block.clientHeight) return true
+      }
+    }
+    return false
+  }
 }
 
 // ── Copy button widget (floats on the right of the opening fence line) ─────────
