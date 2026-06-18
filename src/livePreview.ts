@@ -122,13 +122,15 @@ class TableWidget extends WidgetType {
 
     // Route editor shortcuts (undo/redo) to CodeMirror even when a cell input
     // is focused, otherwise the browser would undo the input in isolation.
+    // stopPropagation prevents CodeMirror's own history keymap from firing a
+    // second undo; we avoid view.focus() so the viewport does not jump.
     wrap.addEventListener('keydown', (e) => {
       if (!(e.ctrlKey || e.metaKey)) return
       const key = e.key.toLowerCase()
       if (key === 'z' && !e.shiftKey) {
-        e.preventDefault(); undo(view); view.focus()
+        e.preventDefault(); e.stopPropagation(); undo(view)
       } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
-        e.preventDefault(); redo(view); view.focus()
+        e.preventDefault(); e.stopPropagation(); redo(view)
       }
     })
 
