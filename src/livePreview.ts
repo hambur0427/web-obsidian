@@ -82,6 +82,12 @@ function serializeTable(headers: string[], rows: string[][]): string {
   return [head, sep, ...body].join('\n')
 }
 
+// Structural edits (add/remove column/row) rewrite the document, which rebuilds
+// the table widget and drops focus. We record which cell the rebuilt widget
+// should focus (row = -1 means a header cell), keyed by the table's start
+// offset so only the matching rebuild consumes it.
+let pendingTableFocus: { from: number; row: number; col: number } | null = null
+
 class TableWidget extends WidgetType {
   private headers: string[]
   private rows: string[][]
@@ -162,13 +168,18 @@ class TableWidget extends WidgetType {
       return ta
     }
 
+    const headerEls: HTMLTextAreaElement[] = []
+    const bodyEls: HTMLTextAreaElement[][] = []
+
     const table = document.createElement('table')
 
     const thead = document.createElement('thead')
     const htr   = document.createElement('tr')
     headers.forEach((h, c) => {
       const th = document.createElement('th')
-      th.appendChild(makeCell(h, (next) => { headers[c] = next; commit() }))
+      const ta = makeCell(h, (next) => { headers[c] = next; commit() })
+      headerEls[c] = ta
+      th.appendChild(ta)
       htr.appendChild(th)
     })
     thead.appendChild(htr)
@@ -177,9 +188,12 @@ class TableWidget extends WidgetType {
     const tbody = document.createElement('tbody')
     rows.forEach((row, r) => {
       const tr = document.createElement('tr')
+      bodyEls[r] = []
       headers.forEach((_, c) => {
         const td = document.createElement('td')
-        td.appendChild(makeCell(row[c] ?? '', (next) => { rows[r][c] = next; commit() }))
+        const ta = makeCell(row[c] ?? '', (next) => { rows[r][c] = next; commit() })
+        bodyEls[r][c] = ta
+        td.appendChild(ta)
         tr.appendChild(td)
       })
       tbody.appendChild(tr)
@@ -187,8 +201,19 @@ class TableWidget extends WidgetType {
     table.appendChild(tbody)
     wrap.appendChild(table)
 
-    // Size textareas to their content once the browser has laid them out.
-    requestAnimationFrame(() => cells.forEach(autoSize))
+    // Size textareas to content, and restore focus after a structural rebuild.
+    requestAnimationFrame(() => {
+      cells.forEach(autoSize)
+      if (pendingTableFocus && pendingTableFocus.from === from) {
+        const { row, col } = pendingTableFocus
+        pendingTableFocus = null
+        const ta = row < 0 ? headerEls[col] : bodyEls[row]?.[col]
+        if (ta) {
+          ta.focus()
+          ta.setSelectionRange(ta.value.length, ta.value.length)
+        }
+      }
+    })
 
     // Toolbar
     const bar = document.createElement('div')
@@ -206,21 +231,25 @@ class TableWidget extends WidgetType {
     bar.appendChild(mkBtn('+ Column', () => {
       headers.push('Column')
       rows.forEach((r) => r.push(''))
+      pendingTableFocus = { from, row: -1, col: headers.length - 1 }
       commit()
     }))
     bar.appendChild(mkBtn('− Column', () => {
       if (headers.length <= 1) return
       headers.pop()
       rows.forEach((r) => r.pop())
+      pendingTableFocus = { from, row: -1, col: headers.length - 1 }
       commit()
     }))
     bar.appendChild(mkBtn('+ Row', () => {
       rows.push(headers.map(() => ''))
+      pendingTableFocus = { from, row: rows.length - 1, col: 0 }
       commit()
     }))
     bar.appendChild(mkBtn('− Row', () => {
       if (!rows.length) return
       rows.pop()
+      pendingTableFocus = { from, row: -1, col: 0 }
       commit()
     }))
 
