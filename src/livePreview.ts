@@ -3,6 +3,7 @@ import { StateField } from '@codemirror/state'
 import type { EditorState, Range, Text } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
+import katex from 'katex'
 
 // ── Inline marks ─────────────────────────────────────────────────────────────
 
@@ -23,6 +24,41 @@ const lnCodeFence  = Decoration.line({ class: 'cm-code-line cm-code-fence' })
 
 const COPY_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+
+// ── Math widgets (KaTeX) ──────────────────────────────────────────────────────
+
+function renderKatex(tex: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(tex, { displayMode, throwOnError: false })
+  } catch {
+    return ''
+  }
+}
+
+class MathWidget extends WidgetType {
+  private tex: string
+  private display: boolean
+  constructor(tex: string, display: boolean) { super(); this.tex = tex; this.display = display }
+
+  eq(other: MathWidget) {
+    return other.tex === this.tex && other.display === this.display
+  }
+
+  toDOM() {
+    const el = document.createElement(this.display ? 'div' : 'span')
+    el.className = this.display ? 'cm-math-block' : 'cm-math-inline'
+    const tex = this.tex.trim()
+    if (!tex) {
+      el.textContent = this.display ? '$$ $$' : '$ $'
+      el.classList.add('cm-math-empty')
+    } else {
+      el.innerHTML = renderKatex(tex, this.display)
+    }
+    return el
+  }
+
+  ignoreEvent() { return false }
+}
 
 // ── Copy button widget (floats on the right of the opening fence line) ─────────
 
@@ -286,7 +322,8 @@ function isTableSep(line: string) {
 
 type CodeBlock  = { type: 'code'; fromLine: number; toLine: number; lang: string; code: string }
 type TableBlock = { type: 'table'; fromLine: number; toLine: number; headers: string[]; rows: string[][] }
-type Block = CodeBlock | TableBlock
+type MathBlock  = { type: 'math'; fromLine: number; toLine: number; tex: string }
+type Block = CodeBlock | TableBlock | MathBlock
 
 function makeCodeBlock(doc: Text, fromLine: number, toLine: number): CodeBlock {
   const openText = doc.line(fromLine).text
@@ -318,6 +355,33 @@ function findBlocks(doc: Text): Block[] {
   if (fenceStart !== -1) {
     blocks.push(makeCodeBlock(doc, fenceStart, doc.lines))
     for (let n = fenceStart; n <= doc.lines; n++) consumed.add(n)
+  }
+
+  // Block math ($$ … $$), single- or multi-line
+  let mathStart = -1
+  let mathLines: string[] = []
+  for (let i = 1; i <= doc.lines; i++) {
+    if (consumed.has(i)) { mathStart = -1; continue }
+    const text = doc.line(i).text.trim()
+
+    if (mathStart === -1) {
+      const single = /^\$\$(.+?)\$\$$/.exec(text)
+      if (single) {
+        blocks.push({ type: 'math', fromLine: i, toLine: i, tex: single[1].trim() })
+        consumed.add(i)
+      } else if (text === '$$' || /^\$\$/.test(text)) {
+        mathStart = i
+        mathLines = text === '$$' ? [] : [doc.line(i).text.replace(/^\s*\$\$/, '')]
+      }
+    } else if (text === '$$' || /\$\$$/.test(text)) {
+      const lastPart = doc.line(i).text.replace(/\$\$\s*$/, '')
+      if (text !== '$$') mathLines.push(lastPart)
+      blocks.push({ type: 'math', fromLine: mathStart, toLine: i, tex: mathLines.join('\n').trim() })
+      for (let n = mathStart; n <= i; n++) consumed.add(n)
+      mathStart = -1
+    } else {
+      mathLines.push(doc.line(i).text)
+    }
   }
 
   // Tables
@@ -367,6 +431,14 @@ function collectInline(offset: number, text: string, out: Range<Decoration>[]) {
     items.push({ from: iTo, to: e, deco: mkHidden })
   }
 
+  // Inline math: $…$ (no surrounding spaces, to avoid matching currency)
+  for (const m of text.matchAll(/(?<![\$\\])\$(?! )([^$\n]{1,200}?)(?<! )\$(?!\$)/g)) {
+    const s = offset + m.index!
+    const e = s + m[0].length
+    const tex = m[1].trim()
+    if (tex) items.push({ from: s, to: e, deco: Decoration.replace({ widget: new MathWidget(tex, false) }) })
+  }
+
   for (const m of text.matchAll(/\*\*([^*\n]{1,300}?)\*\*/g))                        push(m, 2, 2, mkBold)
   for (const m of text.matchAll(/(?<!\*)\*(?!\*)([^*\n]{1,300}?)(?<!\*)\*(?!\*)/g)) push(m, 1, 1, mkItalic)
   for (const m of text.matchAll(/`([^`\n]{1,300}?)`/g))                              push(m, 1, 1, mkCode)
@@ -409,7 +481,7 @@ function buildDecorations(state: EditorState): DecorationSet {
   const blocks  = findBlocks(doc)
   const ranges: Range<Decoration>[] = []
 
-  const blockLineType = new Map<number, 'code' | 'table'>()
+  const blockLineType = new Map<number, 'code' | 'table' | 'math'>()
   for (const b of blocks) {
     for (let n = b.fromLine; n <= b.toLine; n++) blockLineType.set(n, b.type)
   }
@@ -449,7 +521,7 @@ function buildDecorations(state: EditorState): DecorationSet {
           )
         }
       }
-    } else {
+    } else if (block.type === 'table') {
       // Table: always an interactive widget (no raw-syntax editing)
       const from = doc.line(block.fromLine).from
       const to   = doc.line(block.toLine).to
@@ -459,6 +531,18 @@ function buildDecorations(state: EditorState): DecorationSet {
           block: true,
         }).range(from, to),
       )
+    } else {
+      // Block math: rendered when idle, raw LaTeX when the cursor is inside
+      if (!active) {
+        const from = doc.line(block.fromLine).from
+        const to   = doc.line(block.toLine).to
+        ranges.push(
+          Decoration.replace({
+            widget: new MathWidget(block.tex, true),
+            block: true,
+          }).range(from, to),
+        )
+      }
     }
   }
 

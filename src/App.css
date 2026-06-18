@@ -967,6 +967,26 @@ button {
   color: var(--danger);
 }
 
+/* KaTeX math widgets (livePreview.ts) */
+
+.cm-math-block {
+  display: block;
+  padding: 6px 0;
+  overflow-x: auto;
+  text-align: center;
+  cursor: text;
+}
+
+.cm-math-inline {
+  cursor: text;
+}
+
+.cm-math-empty {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
 .relations-footer {
   padding: 20px 32px 28px;
   border-top: 1px solid var(--border);
