@@ -120,18 +120,24 @@ class TableWidget extends WidgetType {
     const wrap = document.createElement('div')
     wrap.className = 'cm-md-table'
 
-    // Route editor shortcuts (undo/redo) to CodeMirror even when a cell input
-    // is focused, otherwise the browser would undo the input in isolation.
-    // stopPropagation prevents CodeMirror's own history keymap from firing a
-    // second undo; we avoid view.focus() so the viewport does not jump.
+    // Undo/redo handling inside the table:
+    // - While a cell is focused, let the textarea's native undo/redo revert
+    //   in-cell edits (which are not yet committed to the document); we only
+    //   stop CodeMirror's history keymap from also firing a document-level undo.
+    // - On the table chrome (buttons etc.), route to CodeMirror's undo/redo.
     wrap.addEventListener('keydown', (e) => {
       if (!(e.ctrlKey || e.metaKey)) return
       const key = e.key.toLowerCase()
-      if (key === 'z' && !e.shiftKey) {
-        e.preventDefault(); e.stopPropagation(); undo(view)
-      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
-        e.preventDefault(); e.stopPropagation(); redo(view)
+      if (key !== 'z' && key !== 'y') return
+
+      if (e.target instanceof HTMLTextAreaElement) {
+        e.stopPropagation()
+        return
       }
+
+      e.preventDefault(); e.stopPropagation()
+      if (key === 'z' && !e.shiftKey) undo(view)
+      else redo(view)
     })
 
     // Cells use auto-growing textareas so long content wraps onto new lines
