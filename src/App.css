@@ -820,14 +820,13 @@ button {
   position: relative;
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
-  margin-top: 4px;
   min-height: 22px;
 }
 
 .cm-code-last {
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
-  margin-bottom: 16px;
+  padding-bottom: 10px;
   min-height: 14px;
 }
 
